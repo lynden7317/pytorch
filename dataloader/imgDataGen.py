@@ -111,12 +111,13 @@ def ImageFolderDataLoader(data_dir, batch_size=4, shuffle=True, partition=['trai
     return dataloaders, dataset_sizes, class_names
 
 class MyCustomDataset(Dataset):
-    def __init__(self, args, transforms=None, height=224, width=224):
+    def __init__(self, datafolder, transforms=None, height=224, width=224, classIDs={}):
         # stuff
-        self.datafolder = args["datafolder"]
+        self.datafolder = datafolder
         self.height = height
         self.width = width
         self.transforms = transforms
+        self.classIDs = classIDs
 
         self.datalist = []
         self.datalist = list(paths.list_images(self.datafolder))
@@ -131,7 +132,9 @@ class MyCustomDataset(Dataset):
         #img = Image.open(imgpath).convert('RGB')
         #print(type(img))
         img_name = self.__img_name(imgpath)
-        label = img_name.split("_")[0]
+
+        lab_str = img_name.split("_")[0]
+        label = self.classIDs[lab_str]
 
         img = torchvision.transforms.ToPILImage()(img).convert('RGB')
         if self.transforms is not None:
