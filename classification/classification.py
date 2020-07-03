@@ -26,12 +26,28 @@ def imshow(inp, title=None, stop=False):
     else:
         plt.pause(1.0)
 
-def img_eval_model(model, img_path):
+def img_eval_model(model, device, img_path, transforms=None, height=224, width=224, class_names=[]):
+    import cv2
+
     was_training = model.training
     model.eval()
 
     with torch.no_grad():
-        pass
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+        if transforms is not None:
+            img = transforms(img)
+        img = torchvision.transforms.Resize((height, width))(img)
+        img = torchvision.transforms.ToTensor()(img)
+        img = torch.unsqueeze(img, 0)
+        print(img.shape)
+
+        input = img.to(device)
+        output = model(input)
+        _, pred = torch.max(output, 1)
+
+        imshow(input.cpu().data[0], title=class_names[pred[0]], stop=True)
 
     model.train(mode=was_training)
 
@@ -222,4 +238,5 @@ if __name__ == '__main__':
 
     NNmodel.load_state_dict(torch.load('best_model_wts'))
 
-    dataloader_eval_model(NNmodel, device, dataloaders['val'], class_names=["bank_cover", "bank_inner"])
+    #dataloader_eval_model(NNmodel, device, dataloaders['val'], class_names=["bank_cover", "bank_inner"])
+    img_eval_model(NNmodel, device, img_path='data/bank_cover_inner_val/4_76.jpg', class_names=["bank_cover", "bank_inner"])
