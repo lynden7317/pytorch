@@ -66,7 +66,7 @@ def train_one_epoch(model,
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
-    torch.save(model.state_dict(), "mrcnn_model_mobile.pth")
+    torch.save(model.state_dict(), "mrcnn_model_car_resnet.pth")
 
     return metric_logger
 
@@ -92,9 +92,7 @@ def MaskRCNN(backbone='resnet50',
                                            aspect_ratios=(anchor_ratios,))
 
     if backbone == 'resnet50':
-        return torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True,
-                                                                  rpn_anchor_generator=anchor_generator,
-                                                                  num_classes=num_classes)
+        return torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
     elif backbone == 'mobilenet_v2':
         backbone = torchvision.models.mobilenet_v2(pretrained=True).features
         backbone.out_channels = 1280
