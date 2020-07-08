@@ -122,17 +122,28 @@ def folderParser(root):
 
     return datasetFolders
 
-def ITRILabeling(root, xml_path, imgs, imgData,
-                 page_classes,
-                 field_classes,
-                 isZip=[]):
+def genImagePath(isZip, xml_path, root, tifName, name):
+    if isZip:
+        _t = xml_path.split('/configName/XMLs')[0]
+        imgDir = path_join(path_join(_t, tifName), name)
+        # print("caseName:{}, imgDir:{}".format(_t, imgDir))
+        img_path = (root, imgDir)
+    else:
+        imgDir = path_join(root, tifName)
+        img_path = path_join(imgDir, name)
+
+    return img_path
+
+def ITRILabelingPageField(root, xml_path, imgs, imgData,
+                          page_classes,
+                          field_classes,
+                          isZip=[]):
     """
-    data format:
+    data format: one image map to one page, image may be repeated
         imgs will be [(zipref, img_location), ...] or [img_location, ...]
-        imgData will be {int: {'frame':{}, 'pages':[{'name':'str', 'bbox':'str',
-                                                     'ctr':'(10, 20)(30, 40)(50, 60)',
-                                                     'fields':[['ID', {attribs}], ...]
-                                                    }] } }
+        imgData will be {int: {'frame':{},
+                               'page':{'name':'str', 'bbox':'str', 'ctr':'(10, 20)(30, 40)(50, 60)',
+                                       'fields':[['ID', {attribs}], ...]} }}
     """
     if isZip[0]:
         zipRef = isZip[1]
@@ -155,16 +166,80 @@ def ITRILabeling(root, xml_path, imgs, imgData,
             if name not in frames:
                 continue
 
-            if isZip[0]:
-                _t = xml_path.split('/configName/XMLs')[0]
-                imgDir = path_join(path_join(_t, tifName), name)
-                #print("caseName:{}, imgDir:{}".format(_t, imgDir))
-                imgs.append((root, imgDir))
-            else:
-                imgDir = path_join(root, tifName)
-                imgPath = path_join(imgDir, name)
-                imgs.append(imgPath)
+            img = genImagePath(isZip[0], xml_path, root, tifName, name)
+            for _p in _f.iter('Page'):
+                pname = _p.attrib['name'].split('_')[0]
+                # print('page name: {}'.format(pname))
 
+                if pname == 'Default':
+                    continue
+
+                elif pname in page_classes:
+                    imgs.append(img)
+                    dataID = len(imgs) - 1
+                    imgData[dataID] = {'frame': {'rotation': _f.attrib['rotation'], \
+                                                 'lefttop_x': _f.attrib['lefttop_x'], \
+                                                 'lefttop_y': _f.attrib['lefttop_y'], \
+                                                 'width': _f.attrib['width'], \
+                                                 'height': _f.attrib['height']}, \
+                                       'page': {'name': pname,\
+                                                'bbox': _p.attrib['bbox'], \
+                                                'ctr': _p.attrib['ctr'], \
+                                                'fields': []}}
+
+                    for field in field_classes:
+                        for _field in _p.iter(field):
+                            _fieldData = [field, {'lefttop_x': _field.attrib['lefttop_x'], \
+                                                  'lefttop_y': _field.attrib['lefttop_y'], \
+                                                  'width': _field.attrib['width'], \
+                                                  'height': _field.attrib['height'], \
+                                                  'labelName': _field.attrib['labelName'], \
+                                                  'value': _field.attrib['value'], \
+                                                  'font': _field.attrib['font']}]
+                            # print(_fieldData)
+                            imgData[dataID]['page']['fields'].append(_fieldData)
+                else:
+                    print('Error:Page name:{} can\'t be recognized'.format(pname))
+                    # print('Error:Page name:{} can\'t be recognized'.format(pname), file=ELOG)
+                    # print('\ncase_name:{}'.format(case), file=ELOG)
+                    # print('tif:{}'.format(tif), file=ELOG)
+                    # print('frame:{}, page:{} '.format(source, pname), file=ELOG)
+                    # print('Error:Page name:{} can\'t be recognized'.format(pname), file=ELOG)
+        if isZip[0]:
+            zipRef.close()
+
+
+def ITRILabelingPage(root, xml_path, imgs, imgData,
+                     page_classes,
+                     isZip=[]):
+    """
+    data format:
+        imgs will be [(zipref, img_location), ...] or [img_location, ...]
+        imgData will be {int: {'frame':{}, 'pages':[{'name':'str', 'bbox':'str','ctr':'(10, 20)(30, 40)(50, 60)}, ...] }}
+    """
+    if isZip[0]:
+        zipRef = isZip[1]
+        #print("zip namelist: {}".format(zipRef.namelist()))
+        _tree = ET.parse(zipRef.open(xml_path))
+    else:
+        _tree = ET.parse(xml_path)
+
+    _rootParse = _tree.getroot()
+    for _tif in _rootParse.iter('Tif'):
+        tifName = _tif.attrib['name']
+
+        if tifName == 'configName':
+            continue
+
+        frames = getFrame(_tif)  # finding the labeled frame, filtering the default frame
+        for _f in _tif.iter('Frame'):
+            source = _f.attrib['source']
+            name = _f.attrib['name']
+            if name not in frames:
+                continue
+
+            img = genImagePath(isZip[0], xml_path, root, tifName, name)
+            imgs.append(img)
             dataID = len(imgs) - 1
             imgData[dataID] = {'frame': {'rotation': _f.attrib['rotation'], \
                                          'lefttop_x': _f.attrib['lefttop_x'], \
@@ -184,20 +259,7 @@ def ITRILabeling(root, xml_path, imgs, imgData,
                 elif pname in page_classes:
                     imgData[dataID]['pages'].append({'name': pname, \
                                                      'bbox': _p.attrib['bbox'], \
-                                                     'ctr': _p.attrib['ctr'], \
-                                                     'fields': []})
-                    _pagesID = len(imgData[dataID]['pages']) - 1
-                    for field in field_classes:
-                        for _field in _p.iter(field):
-                            _fieldData = [field, {'lefttop_x': _field.attrib['lefttop_x'], \
-                                                  'lefttop_y': _field.attrib['lefttop_y'], \
-                                                  'width': _field.attrib['width'], \
-                                                  'height': _field.attrib['height'], \
-                                                  'labelName': _field.attrib['labelName'], \
-                                                  'value': _field.attrib['value'], \
-                                                  'font': _field.attrib['font']}]
-                            # print(_fieldData)
-                            imgData[dataID]['pages'][_pagesID]['fields'].append(_fieldData)
+                                                     'ctr': _p.attrib['ctr']})
                 else:
                     print('Error:Page name:{} can\'t be recognized'.format(pname))
                     #print('Error:Page name:{} can\'t be recognized'.format(pname), file=ELOG)
@@ -213,6 +275,7 @@ def ITRILabeling(root, xml_path, imgs, imgData,
     if isZip[0]:
         zipRef.close()
 
+
 class MRCnnXMLDataset(object):
     def __init__(self, root,
                  transforms=None,
@@ -224,7 +287,7 @@ class MRCnnXMLDataset(object):
         :param transforms:
         :param page_classes:
         :param field_classes:
-        :param data_type: 'page' or 'field', if 'field' should combine with 'page'
+        :param data_type: 'page' or 'page_field', if 'page_field' should combine with 'page'
             the 'fields' are in the 'page'
         """
 
@@ -254,18 +317,32 @@ class MRCnnXMLDataset(object):
                 print("_xml_path: {}".format(_xml_path))
                 #is_pass = False
                 if is_pass:
-                    ITRILabeling(db[0], _xml_path, self.imgs, self.imgData,
-                                 page_classes=["b0090101", "b0070301", "B0080301", "B0070101"],
-                                 field_classes=self.field_classes,
-                                 isZip=[True, _zref])
+                    if self.data_type == 'page':
+                        ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
+                                         page_classes=["b0090101", "b0070301", "B0080301", "B0070101"],
+                                         isZip=[True, _zref])
+                    elif self.data_type == 'page_field':
+                        ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
+                                              page_classes=self.page_classes,
+                                              field_classes=self.field_classes,
+                                              isZip=[True, _zref])
+                    else:
+                        pass
             else:
                 is_pass, _xml_path = getXMLPath(db[0])
                 print("_xml_path: {}".format(_xml_path))
                 if is_pass:
-                    ITRILabeling(db[0], _xml_path, self.imgs, self.imgData,
-                                 self.page_classes,
-                                 self.field_classes,
-                                 isZip=[False])
+                    if self.data_type == 'page':
+                        ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
+                                         self.page_classes,
+                                         isZip=[False])
+                    elif self.data_type == 'page_field':
+                        ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
+                                              page_classes=self.page_classes,
+                                              field_classes=self.field_classes,
+                                              isZip=[False])
+                    else:
+                        pass
 
         #print(self.imgs)
         #print(self.imgData)
@@ -305,8 +382,34 @@ class MRCnnXMLDataset(object):
                 ymax = np.max(pos[0])
                 boxes.append([xmin, ymin, xmax, ymax])
                 #print(type(mask))
-
             #print('labels: {}, boxes: {}'.format(labels, boxes))
+        elif self.data_type == 'page_field':
+            page = mask_of_page(_data['page']['ctr'], height, width)
+            pos = np.where(page)
+            xmin = np.min(pos[1])
+            xmax = np.max(pos[1])
+            ymin = np.min(pos[0])
+            ymax = np.max(pos[0])
+            # === update img to the page size ==== #
+            img = img[ymin:ymax, xmin:xmax, :]
+
+            num_objs = len(_data['page']['fields'])
+            #print("num_objs:{}".format(num_objs))
+            labels = np.zeros((num_objs,))
+            # masks: (N, height, width)
+            masks = np.zeros((num_objs, ymax-ymin, xmax-xmin))
+            for _i, _p in enumerate(_data['page']['fields']):
+                labels[_i] = self.field_classes.index(_p[0])+1
+                fxmin = int(_p[1]['lefttop_x']) if int(_p[1]['lefttop_x']) > xmin else xmin
+                fxmax = fxmin+int(_p[1]['width'])
+                fxmax = fxmax if fxmax < xmax else xmax
+                fymin = int(_p[1]['lefttop_y']) if int(_p[1]['lefttop_y']) > ymin else ymin
+                fymax = fymin+int(_p[1]['height'])
+                fymax = fymax if fymax < ymax else ymax
+                masks[_i, (fymin-ymin):(fymax-ymin), (fxmin-xmin):(fxmax-xmin)] = 1
+                boxes.append([fxmin-xmin, fymin-ymin, fxmax-xmin, fymax-ymin])
+        else:
+            pass
 
         # convert everything into a torch.Tensor
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
@@ -334,28 +437,41 @@ class MRCnnXMLDataset(object):
     def __len__(self):
         return len(self.imgs)
 
-
-
 if __name__ == '__main__':
+    """
+    usage:
+      prepared attributes:
+        dataset folder: ex "./dataset/test"
+        page_classes: ex ['name1', ...]
+        field_classes: ex ['name1', ...]
+        data_type = 'page' or 'page_field'
+    """
+    page_classes = ['AA001A', 'AA001B', 'AA002A', 'AA003B', 'AA004A', 'AA005B', 'ANA001A', 'ANA001B', 'ANA002A', 'ANA003A', 'CA001A', 'CA001B', 'CD001A', 'CD001B', 'CD002B', 'CD003A', 'CI001A', 'CI001B', 'CP001A', 'CP001B', 'CP002B', 'EM001A', 'EM001B', 'EVA001A', 'EVA001B', 'EVA002A', 'EVA002B', 'JAL001A', 'JAL001B', 'JAL002A', 'JE001A', 'JE001B', 'JE002B', 'JE003B', 'JS001A', 'JS002A', 'JS003A', 'MD001B', 'PA001A', 'PA002A', 'PA002B', 'SC001A', 'SC001B', 'TH001A', 'TH001B', 'TH002A', 'TH002B', 'TIG001B', 'TIG002A', 'TIG002B', 'XI001A', 'XI001B']
+    field_classes = ['Name', 'Date', 'Flight', 'FromCity', 'ToCity', 'FromId', 'ToId']
+
     import mask_rcnn
+    import sys
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
 
-    dataset = MRCnnXMLDataset("./dataset/test",
-                              page_classes=['C01', 'C02', 'C03', 'C04'],
-                              field_classes=[])
+    dataset = MRCnnXMLDataset("./dataset/test2",
+                              page_classes=page_classes,
+                              field_classes=field_classes,
+                              data_type='page_field')
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
     #print(dataset.imgs)
-    #print(dataset.imgData)
+    #print(dataset.imgData[0])
     #print(next(iter(dataloader)))
+    #sys.exit(1)
 
     mrcnn = mask_rcnn.MaskRCNN()
     #print(mrcnn)
 
     mrcnn.to(device)
 
+    """
     # construct an optimizer
     params = [p for p in mrcnn.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=0.005,
@@ -364,14 +480,14 @@ if __name__ == '__main__':
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
                                                    step_size=3,
                                                    gamma=0.1)
-    """
+
     # let's train it for 10 epochs
     num_epochs = 30
     for epoch in range(num_epochs):
         mask_rcnn.train_one_epoch(mrcnn, optimizer, dataloader, device, epoch, print_freq=10)
     """
 
-
+    """
     import visualize
     mrcnn.load_state_dict(torch.load('mrcnn_model_car_resnet.pth'))
     mrcnn.eval()
@@ -403,9 +519,8 @@ if __name__ == '__main__':
                 #print(np.where(masks[:, :, 0]))
                 visualize.display_instances(img, boxes, masks, labels, class_names)
                 sys.exit(1)
-
-
     """
+
     import visualize
     img, target = dataset[0]
     #print(img)
@@ -417,7 +532,8 @@ if __name__ == '__main__':
     boxes = np.array(target['boxes'])
     masks = np.array(target['masks']).transpose((1, 2, 0))
     class_ids = np.array(target['labels'])
-    class_names = dataset.page_classes
+    #class_names = dataset.page_classes
+    class_names = dataset.field_classes
     print(type(boxes), type(masks), masks.shape)
     visualize.display_instances(img, boxes, masks, class_ids, class_names)
-    """
+
