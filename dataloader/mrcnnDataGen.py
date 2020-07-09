@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -198,6 +199,10 @@ def ITRILabelingPageField(root, xml_path, imgs, imgData,
                                                   'font': _field.attrib['font']}]
                             # print(_fieldData)
                             imgData[dataID]['page']['fields'].append(_fieldData)
+
+                    if len(imgData[dataID]['page']['fields']) == 0:
+                        # remove this case
+                        imgs.pop()
                 else:
                     print('Error:Page name:{} can\'t be recognized'.format(pname))
                     # print('Error:Page name:{} can\'t be recognized'.format(pname), file=ELOG)
@@ -310,11 +315,12 @@ class MRCnnXMLDataset(object):
         self.imgs = []
         self.imgData = {}
 
-        for db in self.datasets:
+        for _i, db in enumerate(self.datasets):
+            print("parsering db:{}".format(db[0]))
             isZip = True if db[1] == 'zip' else False
             if isZip:
                 is_pass, _xml_path, _zref = getXMLPath(db[0], isZip=True, returnZref=True)
-                print("_xml_path: {}".format(_xml_path))
+                print("  xml_path: {}".format(_xml_path))
                 #is_pass = False
                 if is_pass:
                     if self.data_type == 'page':
@@ -330,7 +336,7 @@ class MRCnnXMLDataset(object):
                         pass
             else:
                 is_pass, _xml_path = getXMLPath(db[0])
-                print("_xml_path: {}".format(_xml_path))
+                print("  xml_path: {}".format(_xml_path))
                 if is_pass:
                     if self.data_type == 'page':
                         ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
@@ -416,6 +422,7 @@ class MRCnnXMLDataset(object):
         labels = torch.as_tensor(labels, dtype=torch.int64)
         masks = torch.as_tensor(masks, dtype=torch.uint8)
         image_id = torch.tensor([idx])
+        #print(boxes, _data, _tmp, idx,)
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
         # suppose all instances are not crowd
         iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
@@ -437,6 +444,19 @@ class MRCnnXMLDataset(object):
     def __len__(self):
         return len(self.imgs)
 
+
+def _get_iou_types(model):
+    model_without_ddp = model
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        model_without_ddp = model.module
+    iou_types = ["bbox"]
+    if isinstance(model_without_ddp, torchvision.models.detection.MaskRCNN):
+        iou_types.append("segm")
+    if isinstance(model_without_ddp, torchvision.models.detection.KeypointRCNN):
+        iou_types.append("keypoints")
+    return iou_types
+
+
 if __name__ == '__main__':
     """
     usage:
@@ -450,15 +470,14 @@ if __name__ == '__main__':
     field_classes = ['Name', 'Date', 'Flight', 'FromCity', 'ToCity', 'FromId', 'ToId']
 
     import mask_rcnn
-    import sys
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
 
     dataset = MRCnnXMLDataset("./dataset/test2",
                               page_classes=page_classes,
-                              field_classes=field_classes,
-                              data_type='page_field')
+                              field_classes=[],
+                              data_type='page')
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
     #print(dataset.imgs)
@@ -472,6 +491,18 @@ if __name__ == '__main__':
     mrcnn.to(device)
 
     """
+    from coco_utils import get_coco_api_from_dataset
+    from coco_eval import CocoEvaluator
+    coco = get_coco_api_from_dataset(dataloader.dataset)
+    iou_types = _get_iou_types(mrcnn)
+    coco_evaluator = CocoEvaluator(coco, iou_types)
+    print(coco_evaluator)
+    mrcnn.load_state_dict(torch.load('mrcnn_model_resnet50_air.pth'))
+    coco_evaluator, eval_values = mask_rcnn.evaluate(mrcnn, dataloader, device=device)
+    print("eval_values: {}".format(eval_values))
+    """
+
+
     # construct an optimizer
     params = [p for p in mrcnn.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=0.005,
@@ -482,10 +513,14 @@ if __name__ == '__main__':
                                                    gamma=0.1)
 
     # let's train it for 10 epochs
-    num_epochs = 30
+    num_epochs = 20
     for epoch in range(num_epochs):
         mask_rcnn.train_one_epoch(mrcnn, optimizer, dataloader, device, epoch, print_freq=10)
-    """
+        lr_scheduler.step()
+
+    print(runlog)
+    torch.save(mrcnn.state_dict(), "mrcnn_model_resnet50_air_page.pth")
+
 
     """
     import visualize
@@ -520,7 +555,7 @@ if __name__ == '__main__':
                 visualize.display_instances(img, boxes, masks, labels, class_names)
                 sys.exit(1)
     """
-
+    """
     import visualize
     img, target = dataset[0]
     #print(img)
@@ -536,4 +571,4 @@ if __name__ == '__main__':
     class_names = dataset.field_classes
     print(type(boxes), type(masks), masks.shape)
     visualize.display_instances(img, boxes, masks, class_ids, class_names)
-
+    """
