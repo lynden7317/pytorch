@@ -91,7 +91,8 @@ def display(image, boxes, scores, title="",
 
 def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
-                      figsize=(16, 16), ax=None):
+                      figsize=(16, 16), ax=None,
+                      is_display=False):
     """
     boxes: [num_instance, (x1, y1, x2, y2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -161,8 +162,11 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
         """
-    ax.imshow(masked_image.astype(np.uint8))
-    plt.show()
+    if is_display:
+        ax.imshow(masked_image.astype(np.uint8))
+        plt.show()
+
+    return masked_image.astype(np.uint8)
 
 # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
 #                             class_names, r['scores'])
