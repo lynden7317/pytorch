@@ -45,4 +45,7 @@ if __name__ == '__main__':
     print("eval_values: {}".format(eval_values))
     """
 
-    engine.evaluate(mrcnn, dataloader, device, class_names=page_classes, is_plot=True)
+    #engine.evaluate(mrcnn, dataloader, device, class_names=page_classes, is_plot=True)
+
+    imgpath = 'img_test.jpg'
+    engine.evaluate_image(mrcnn, imgpath, device, class_names=page_classes, is_plot=True)

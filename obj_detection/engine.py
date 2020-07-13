@@ -95,12 +95,17 @@ def _get_iou_types(model):
     return iou_types
 
 @torch.no_grad()
-def evaluate(model, data_loader, device, class_names=[], is_plot=False, plotFolder='./plotEval'):
+def evaluate(model, data_loader, device, class_names=[],
+             score_threshold=0.7,
+             is_plot=False,
+             plotFolder='./plotEval'):
     if is_plot:
         if not os.path.isdir(plotFolder):
             utils.mkdir(plotFolder)
 
-    n_threads = torch.get_num_threads()
+    class_names = ['BG'] + class_names
+    #n_threads = torch.get_num_threads()
+
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Evaluation:'
@@ -114,8 +119,6 @@ def evaluate(model, data_loader, device, class_names=[], is_plot=False, plotFold
         outputs = model(images)
 
         outputs = [{k: v.to(device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
-
         for _i, t in enumerate(outputs):
             if is_plot:
                 img = images[_i].cpu().clone()
@@ -125,52 +128,95 @@ def evaluate(model, data_loader, device, class_names=[], is_plot=False, plotFold
                 _name = "img_b{}_{}.jpg".format(batch, _i)
                 cv2.imwrite(os.path.join(plotFolder, _name), img_bgr)
 
-            boxes = t['boxes'].cpu().clone().numpy()
-            labels = t['labels'].cpu().clone().numpy()
-            scores = t['scores'].cpu().clone().numpy()
-            masks = t['masks'].cpu().clone().numpy().transpose(1, 2, 3, 0)[0]
-            class_names = ['BG'] + class_names
-            print(t)
+            if len(t['labels']) == 0:
+                print("no object is detected")
+                continue
+
+            _boxes = t['boxes'].cpu().clone().numpy()
+            _labels = t['labels'].cpu().clone().numpy()
+            _scores = t['scores'].cpu().clone().numpy()
+            _masks = t['masks'].cpu().clone().numpy()
+            #_masks = t['masks'].cpu().clone().numpy().transpose(1, 2, 3, 0)[0]
+            # ==== update results by score_threshold ==== #
+            scores_pass = np.where(_scores > score_threshold)
+            boxes = _boxes[scores_pass]
+            labels = _labels[scores_pass]
+            scores = _scores[scores_pass]
+            masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
+            #print(scores_pass, scores_pass[0])
+            #print(boxes.shape, labels.shape, scores.shape, masks.shape)
             if is_plot:
-                img_pred = visualize.display_instances(img, boxes, masks, labels, class_names)
-                img_bgr = cv2.cvtColor(np.asarray(img_pred), cv2.COLOR_RGB2BGR)
-                _name = "img_b{}_{}_pred.jpg".format(batch, _i)
-                cv2.imwrite(os.path.join(plotFolder, _name), img_bgr)
+                _name = os.path.join(plotFolder, "img_b{}_{}_pred.png".format(batch, _i))
+                visualize.display_instances(img, boxes, masks, labels,
+                                            class_names,
+                                            is_saveplot=[True, _name])
 
         batch += 1
-        break
+        model_time = time.time() - model_time
+        metric_logger.update(model_time=model_time)
+        if batch > 5:
+            break
 
 
 @torch.no_grad()
-def evaluate_image(model, image, device, classes=[], isplot=False):
+def evaluate_image(model, img_path, device, class_names=[],
+                   score_threshold=0.7,
+                   is_plot=False,
+                   plotFolder='./plotEval'):
     """
     :param model:
     :param image: np.array
     :return:
     """
-    result = {}
-    model.eval()
-    img = torchvision.transforms.ToPILImage()(image).convert('RGB')
-    img = torchvision.transforms.ToTensor()(img)
-    model_time = time.time()
-    output = model(img)
+    if is_plot:
+        if not os.path.isdir(plotFolder):
+            utils.mkdir(plotFolder)
 
+    class_names = ['BG'] + class_names
+
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+    img = torchvision.transforms.ToTensor()(img)
+    img = torch.unsqueeze(img, 0)
+    img = img.to(device)
+
+    model.eval()
+    model_time = time.time()
+    output = model(img)[0]
+
+    print(output)
+    #outputs = [{k: v.to(device) for k, v in t.items()} for t in output]
+    #print(output)
     if len(output['labels']) == 0:
         print("no object is detected")
-        return {}
+        return {"boxes": [], "labels": [], "scores": [], "masks": [], "class_names": class_names}
 
-    boxes = output['boxes'].cpu().clone().numpy()
-    labels = output['labels'].cpu().clone().numpy()
-    scores = output['scores'].cpu().clone().numpy()
-    masks = output['masks'].cpu().clone().numpy().transpose(1, 2, 3, 0)[0]
-    class_names = ['BG'] + classes
-    result = {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks, "class_names":class_names}
+    _boxes = output['boxes'].cpu().clone().numpy()
+    _labels = output['labels'].cpu().clone().numpy()
+    _scores = output['scores'].cpu().clone().numpy()
+    _masks = output['masks'].cpu().clone().numpy()
+    # ==== update results by score_threshold ==== #
+    scores_pass = np.where(_scores > score_threshold)
+    boxes = _boxes[scores_pass]
+    labels = _labels[scores_pass]
+    scores = _scores[scores_pass]
+    masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
+    print(type(boxes), type(labels), type(scores), type(masks))
+    result = {"boxes": boxes, "labels": labels, "scores": scores, "masks": masks, "class_names": class_names}
+
     model_time = time.time() - model_time
     print("Evaluation: model_time: {}".format(model_time))
-
     print(boxes.shape, labels.shape, scores.shape, masks.shape)
-    if isplot:
-        pass
+
+    if is_plot:
+        img = img[0].cpu().clone()
+        img = torchvision.transforms.ToPILImage()(img)
+        img = np.array(img)
+        _name = os.path.join(plotFolder, os.path.basename(img_path).split(".")[0]+"_pred.png")
+        visualize.display_instances(img, boxes, masks, labels,
+                                    class_names,
+                                    is_saveplot=[True, _name])
 
     return result
 

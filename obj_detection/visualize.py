@@ -92,7 +92,8 @@ def display(image, boxes, scores, title="",
 def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
                       figsize=(16, 16), ax=None,
-                      is_display=False):
+                      is_display=False,
+                      is_saveplot=[False, ""]):
     """
     boxes: [num_instance, (x1, y1, x2, y2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -143,7 +144,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         x = random.randint(x1, (x1 + x2) // 2)
         caption = "{} {:.3f}".format(label, score) if score else label
         ax.text(x1, y1 + 8, caption,
-                color='w', size=11, backgroundcolor="none")
+                color='w', size=11, backgroundcolor="black")
 
         # Mask
         mask = masks[:, :, i]
@@ -162,11 +163,20 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
         """
+    img = masked_image.astype(np.uint8)
     if is_display:
-        ax.imshow(masked_image.astype(np.uint8))
+        import matplotlib
+        plt.ioff()
+        matplotlib.use('Tkagg')
+        ax.imshow(img)
         plt.show()
 
-    return masked_image.astype(np.uint8)
+    if is_saveplot[0]:
+        import matplotlib
+        matplotlib.use('agg')
+        print("save plot {}".format(is_saveplot[1]))
+        ax.imshow(img)
+        plt.savefig(is_saveplot[1])
 
 # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
 #                             class_names, r['scores'])
