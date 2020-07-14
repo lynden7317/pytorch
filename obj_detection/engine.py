@@ -98,10 +98,10 @@ def _get_iou_types(model):
 def evaluate(model, data_loader, device, class_names=[],
              score_threshold=0.7,
              is_plot=False,
-             plotFolder='./plotEval'):
+             plot_folder='./plotEval'):
     if is_plot:
-        if not os.path.isdir(plotFolder):
-            utils.mkdir(plotFolder)
+        if not os.path.isdir(plot_folder):
+            utils.mkdir(plot_folder)
 
     class_names = ['BG'] + class_names
     #n_threads = torch.get_num_threads()
@@ -126,7 +126,7 @@ def evaluate(model, data_loader, device, class_names=[],
                 img = np.array(img)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                 _name = "img_b{}_{}.jpg".format(batch, _i)
-                cv2.imwrite(os.path.join(plotFolder, _name), img_bgr)
+                cv2.imwrite(os.path.join(plot_folder, _name), img_bgr)
 
             if len(t['labels']) == 0:
                 print("no object is detected")
@@ -146,10 +146,10 @@ def evaluate(model, data_loader, device, class_names=[],
             #print(scores_pass, scores_pass[0])
             #print(boxes.shape, labels.shape, scores.shape, masks.shape)
             if is_plot:
-                _name = os.path.join(plotFolder, "img_b{}_{}_pred.png".format(batch, _i))
+                _name = os.path.join(plot_folder, "img_b{}_{}_pred.png".format(batch, _i))
                 visualize.display_instances(img, boxes, masks, labels,
                                             class_names,
-                                            is_saveplot=[True, _name])
+                                            is_save=[True, _name])
 
         batch += 1
         model_time = time.time() - model_time
@@ -162,15 +162,15 @@ def evaluate(model, data_loader, device, class_names=[],
 def evaluate_image(model, img_path, device, class_names=[],
                    score_threshold=0.7,
                    is_plot=False,
-                   plotFolder='./plotEval'):
+                   plot_folder='./plotEval'):
     """
     :param model:
     :param image: np.array
     :return:
     """
     if is_plot:
-        if not os.path.isdir(plotFolder):
-            utils.mkdir(plotFolder)
+        if not os.path.isdir(plot_folder):
+            utils.mkdir(plot_folder)
 
     class_names = ['BG'] + class_names
 
@@ -213,10 +213,10 @@ def evaluate_image(model, img_path, device, class_names=[],
         img = img[0].cpu().clone()
         img = torchvision.transforms.ToPILImage()(img)
         img = np.array(img)
-        _name = os.path.join(plotFolder, os.path.basename(img_path).split(".")[0]+"_pred.png")
+        _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
         visualize.display_instances(img, boxes, masks, labels,
                                     class_names,
-                                    is_saveplot=[True, _name])
+                                    is_save=[True, _name])
 
     return result
 
