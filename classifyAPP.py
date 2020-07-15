@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from dataloader import imgDataGen
 from classification import engine
 from classification import models
-
+from classification import classifier
 
 if __name__ == '__main__':
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -33,7 +33,11 @@ if __name__ == '__main__':
     NNmodel, features = models.NNsModel(device, model_name='resnet50',
                                         classes=classes, pretrained_path=pretrained_path, extract_layers=[-2])
 
-    engine.extract_features(features[0], device, dataloaders['val'], classes_name=["bank_cover", "bank_inner"])
+    #engine.extract_features(features[0], device, dataloaders['val'], classes_name=["bank_cover", "bank_inner"])
+
+    classifier = classifier.xgboost_classifier(model_path="./classification/xgb_weights/xgb500.model", is_train=False)
+    engine.feature2classifier(features[0], device, classifier, dataloader=dataloaders['val'], classes_name=["bank_cover", "bank_inner"])
+    #engine.feature2classifier_image(features[0], device, classifier, img_path='test_bank.jpg', classes_name=["bank_cover", "bank_inner"])
 
     #NNmodel.load_state_dict(torch.load('best_model_wts'))
     #engine.evaluate(NNmodel, device, dataloaders['val'], class_names=["bank_cover", "bank_inner"])

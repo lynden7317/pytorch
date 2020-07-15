@@ -1,22 +1,34 @@
 import os
+import errno
 import time
 import copy
 import cv2
 import torch
 import numpy as np
 
-import errno
-
 import torch.nn as nn
 import torchvision
 
 from classification import visualize
 
+def img2torch(img_path, transforms=None, height=224, width=224):
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+    if transforms is not None:
+        img = transforms(img)
+    img = torchvision.transforms.Resize((height, width))(img)
+    img = torchvision.transforms.ToTensor()(img)
+    img = torch.unsqueeze(img, 0)
+
+    return img
+
 @torch.no_grad()
 def evaluate_image(model, device,
                    img_path,
-                   transforms=None, height=224, width=224,
-                   class_names=[],
+                   transforms=None,
+                   height=224, width=224,
+                   classes_name=[],
                    is_plot=False,
                    is_save=False,
                    plot_folder='./plotEval'):
@@ -32,14 +44,7 @@ def evaluate_image(model, device,
     was_training = model.training
     model.eval()
 
-    img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = torchvision.transforms.ToPILImage()(img).convert('RGB')
-    if transforms is not None:
-        img = transforms(img)
-    img = torchvision.transforms.Resize((height, width))(img)
-    img = torchvision.transforms.ToTensor()(img)
-    img = torch.unsqueeze(img, 0)
+    img = img2torch(img_path, transforms, height, width)
 
     input = img.to(device)
     output = model(input)
@@ -48,31 +53,31 @@ def evaluate_image(model, device,
     if is_plot:
         if is_save:
             _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            visualize.imshow(input.cpu().data[0], title=class_names[pred[0]], is_display=True, is_save=[True, _name])
+            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=True, is_save=[True, _name])
         else:
-            visualize.imshow(input.cpu().data[0], title=class_names[pred[0]], is_display=True)
+            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=True)
     else:
         if is_save:
             _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            visualize.imshow(input.cpu().data[0], title=class_names[pred[0]], is_display=False, is_save=[True, _name])
+            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=False, is_save=[True, _name])
 
     model.train(mode=was_training)
 
 @torch.no_grad()
-def evaluate(model, device, dataloader, class_names=[]):
+def evaluate(model, device, dataloader, classes_name=[]):
     was_training = model.training
     model.eval()
 
     images_so_far = 0
     for i, (inputs, labels) in enumerate(dataloader):
         inputs = inputs.to(device)
-        labels = labels.to(device)
 
         outputs = model(inputs)
         _, preds = torch.max(outputs, 1)
 
     model.train(mode=was_training)
 
+@torch.no_grad()
 def extract_features(fmodel,
                      device,
                      dataloader,
@@ -94,7 +99,8 @@ def extract_features(fmodel,
         inputs = inputs.to(device)
         outputs = torch.squeeze(out(inputs))
         _b = outputs.shape[0]
-        X_data[ind:ind+_b,] = outputs.cpu().detach().numpy()
+        #X_data[ind:ind+_b,] = outputs.cpu().detach().numpy()
+        X_data[ind:ind + _b, ] = outputs.cpu().numpy()
         Y_data[ind:ind+_b,] = labels.cpu().numpy()
         ind += _b
 
@@ -112,12 +118,27 @@ def extract_features(fmodel,
     if is_plot:
         visualize.features_exam(X_data, Y_data, classes_name=classes_name)
 
-def feature2classifier(fmodel,
-                       device,
-                       dataloader,
-                       classifier,
-                       pooling='global_avg',
-                       classes_name=[]):
+@torch.no_grad()
+def feature2classifier_image(fmodel, device,
+                             classifier,
+                             img_path,
+                             transforms=None,
+                             height=224, width=224,
+                             pooling='global_avg',
+                             classes_name=[]):
+    """
+    :param fmodel:
+    :param device:
+    :param classifier:
+    :param img_path:
+    :param transforms:
+    :param height:
+    :param width:
+    :param pooling:
+    :param classes_name:
+    :return:
+        [img_path, predId, pred[predId], classes_name[predId]] ex["./xxx.jpg", 0, 0.99, "lab1"]
+    """
     since = time.time()
     if pooling == 'global_avg':
         out = nn.Sequential(fmodel, nn.AdaptiveAvgPool2d((1, 1)))
@@ -125,9 +146,71 @@ def feature2classifier(fmodel,
     out = out.to(device)
     out.eval()
 
+    img = img2torch(img_path, transforms, height, width)
+    input_img = img.to(device)
+    output = torch.squeeze(out(input_img))
+    print(output.shape, type(output))
+    output = output.cpu().numpy()
+
+    result = []
+    if classifier[2] == 'xgboost':
+        _d = classifier[1](np.expand_dims(output, axis=0))
+        pred = classifier[0].predict(_d)
+        predId = np.argmax(pred, axis=1)
+        print(pred, np.argmax(pred, axis=1))
+        result = [img_path, predId, pred[predId], classes_name[predId]]
+
+    time_elapsed = time.time() - since
+    print('Evaluation complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    return result
+
+@torch.no_grad()
+def feature2classifier(fmodel,
+                       device,
+                       classifier,
+                       dataloader=None,
+                       pooling='global_avg',
+                       classes_name=[]):
+    """
+    :param fmodel:
+    :param device:
+    :param dataloader:
+    :param classifier: (cls_model, input_fun, model_type) ex(xgbmodel, xgb.DMatrix, "xgboost")
+    :param pooling:
+    :param classes_name:
+    :return:
+        [[label, predicted, score], ...] ex[[0, 0, 0.99], [0, 1, 0.80]]
+    """
+    since = time.time()
+    if pooling == 'global_avg':
+        out = nn.Sequential(fmodel, nn.AdaptiveAvgPool2d((1, 1)))
+
+    out = out.to(device)
+    out.eval()
+
+    results = []
     for inputs, labels in dataloader:
         inputs = inputs.to(device)
         outputs = torch.squeeze(out(inputs))
+        #outputs = outputs.cpu().detach().numpy()
+        outputs = outputs.cpu().numpy()
+        labels = labels.cpu().numpy()
+        #print(outputs.shape, type(outputs))
+        #print(labels)
+
+        if classifier[2] == 'xgboost':
+            _d = classifier[1](outputs)
+            preds = classifier[0].predict(_d)
+            predIds = np.argmax(preds, axis=1)
+            _results = [[labels[_i], _d, preds[_i][_d]] for _i, _d in enumerate(predIds)]
+            #print(preds, np.argmax(preds, axis=1))
+
+        results += _results
+
+    time_elapsed = time.time() - since
+    print('Evaluation complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    #print(results)
+    return results
 
 
 def train_model(model, device,
@@ -200,8 +283,7 @@ def train_model(model, device,
         print()
 
     time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
     torch.save(best_model_wts, "best_model_wts")
 
