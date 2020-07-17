@@ -93,7 +93,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
                       figsize=(16, 16), ax=None,
                       is_display=False,
-                      is_saveplot=[False, ""]):
+                      is_save=[False, ""]):
     """
     boxes: [num_instance, (x1, y1, x2, y2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -171,12 +171,12 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         ax.imshow(img)
         plt.show()
 
-    if is_saveplot[0]:
+    if is_save[0]:
         import matplotlib
         matplotlib.use('agg')
-        print("save plot {}".format(is_saveplot[1]))
+        print("save plot {}".format(is_save[1]))
         ax.imshow(img)
-        plt.savefig(is_saveplot[1])
+        plt.savefig(is_save[1])
 
 # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
 #                             class_names, r['scores'])

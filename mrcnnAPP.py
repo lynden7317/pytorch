@@ -32,7 +32,7 @@ if __name__ == '__main__':
     #print(dataset.imgData[0])
     #sys.exit(1)
 
-    mrcnn = mask_rcnn.MaskRCNN()
+    mrcnn = mask_rcnn.MaskRCNN(num_classes=len(page_classes)+1)
     #print(mrcnn)
     mrcnn.to(device)
 
