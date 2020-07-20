@@ -51,11 +51,12 @@ def imshow(inp, title=None,
         _, ax = plt.subplots(1, figsize=figsize)
 
     print(type(inp))
+    inp = inp.byte()
     inp = inp.numpy().transpose((1, 2, 0))
-    #mean = np.array([0.485, 0.456, 0.406])
-    #std = np.array([0.229, 0.224, 0.225])
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
     #inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
+    #inp = np.clip(inp, 0, 1)
 
     # Show area outside image boundaries.
     height, width = inp.shape[:2]
@@ -66,7 +67,7 @@ def imshow(inp, title=None,
     if title is not None:
         ax.set_title(title)
 
-    if is_save:
+    if is_save[0]:
         print("save plot {}".format(is_save[1]))
         ax.imshow(inp)
         plt.savefig(is_save[1])

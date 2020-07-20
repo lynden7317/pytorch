@@ -1,4 +1,5 @@
 import os
+import torch
 import numpy as np
 
 from torch.utils.data.dataset import Dataset
@@ -11,14 +12,18 @@ from imutils import paths
 
 import matplotlib.pyplot as plt
 
+np.set_printoptions(threshold=np.inf)
+torch.set_printoptions(profile="full")
+
 def imshow(inp, title=None):
     """Imshow for Tensor."""
-    print(type(inp))
-    inp = inp.numpy().transpose((1, 2, 0))
+    inp = inp.byte()
+    inp = inp.numpy().transpose((1, 2, 0))   #(1,2,0)
+    print(type(inp), inp.shape)
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     #inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
+    #inp = np.clip(inp, 0, 1)
     plt.imshow(inp)
     if title is not None:
         plt.title(title)
@@ -111,13 +116,21 @@ def ImageFolderDataLoader(data_dir, batch_size=4, shuffle=True, partition=['trai
     return dataloaders, dataset_sizes, class_names
 
 class MyCustomDataset(Dataset):
-    def __init__(self, datafolder, transforms=None, height=224, width=224, classIDs={}):
+    def __init__(self, datafolder,
+                 pil_process=True,
+                 npy_process=False,
+                 transforms=None,
+                 height=224, width=224,
+                 classIDs={}):
         # stuff
         self.datafolder = datafolder
         self.height = height
         self.width = width
-        self.transforms = transforms
         self.classIDs = classIDs
+
+        self.pil = pil_process
+        self.npy = npy_process
+        self.transforms = transforms
 
         self.datalist = []
         self.datalist = list(paths.list_images(self.datafolder))
@@ -136,11 +149,21 @@ class MyCustomDataset(Dataset):
         lab_str = img_name.split("_")[0]
         label = self.classIDs[lab_str]
 
-        img = torchvision.transforms.ToPILImage()(img).convert('RGB')
-        if self.transforms is not None:
-            img = self.transforms(img)
-        img = torchvision.transforms.Resize((self.height, self.width))(img)
-        img = torchvision.transforms.ToTensor()(img)
+        #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+        #if self.transforms is not None:
+        #    img = self.transforms(img)
+        #img = torchvision.transforms.Resize((self.height, self.width))(img)
+        #img = torchvision.transforms.ToTensor()(img)
+        if self.pil:
+            img = torchvision.transforms.ToPILImage()(img)
+            if self.transforms is not None:
+                img = self.transforms(img)
+            img = torchvision.transforms.ToTensor()(img)
+
+        if self.npy:
+            img = img.transpose((2, 0, 1))    # numpy as (H, W, C) to pytorch as (C, H, W)
+            img = torch.from_numpy(img).float()
+            #print(img[...], img.shape)
 
         return (img, label)
 

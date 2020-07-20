@@ -70,10 +70,20 @@ def evaluate(model, device, dataloader, classes_name=[]):
 
     images_so_far = 0
     for i, (inputs, labels) in enumerate(dataloader):
+        print(inputs.shape)
+        #inputs = torch.transpose(inputs, 3, 1)  #3, 1
+        #inputs = torch.transpose(inputs, 2, 3)  #2, 3
+        #print(inputs.shape)
         inputs = inputs.to(device)
 
+        #break
         outputs = model(inputs)
         _, preds = torch.max(outputs, 1)
+
+        #visualize.imshow(inputs.cpu().data[0], title="", is_display=True)
+        #break
+        #print(outputs.shape, preds, labels, inputs[0])
+        print(outputs.shape, preds, labels)
 
     model.train(mode=was_training)
 
