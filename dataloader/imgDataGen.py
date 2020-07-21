@@ -162,10 +162,10 @@ class MyCustomDataset(Dataset):
 
         if self.npy:
             img = img.transpose((2, 0, 1))    # numpy as (H, W, C) to pytorch as (C, H, W)
-            img = torch.from_numpy(img).float()
+            img = torch.from_numpy(img.copy()).float()
             #print(img[...], img.shape)
 
-        return (img, label)
+        return img, label
 
     def __len__(self):
         # of how many examples(images?) you have

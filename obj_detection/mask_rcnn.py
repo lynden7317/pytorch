@@ -5,7 +5,7 @@ from torchvision.models.detection.mask_rcnn import MaskRCNN as MRCNN
 from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 from torchvision.models.detection.rpn import AnchorGenerator
 
-
+#((32,), (64,), (128,), (256,), (512,))
 def MaskRCNN(backbone='default',
              anchors=(32, 64, 128, 256, 512),
              anchor_ratios=(0.5, 1.0, 2.0),
@@ -18,9 +18,10 @@ def MaskRCNN(backbone='default',
     :return:
     """
     if backbone == 'default':
-        return torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True, num_classes=num_classes)
+        return torchvision.models.detection.maskrcnn_resnet50_fpn(num_classes=num_classes)
         #return torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
     elif backbone == 'resnet50':
+        # anchor_sizes should be ((32,), (64,), (128,), (256,), (512,))
         backbone = resnet_fpn_backbone(backbone_name=backbone, pretrained=True)
     elif backbone == 'mobilenet_v2':
         backbone = torchvision.models.mobilenet_v2(pretrained=True).features
@@ -28,7 +29,11 @@ def MaskRCNN(backbone='default',
     else:
         pass
 
-    anchor_generator = AnchorGenerator(sizes=(anchors,), aspect_ratios=(anchor_ratios,))
+    anchor_sizes = tuple((s, ) for s in anchors)
+    aspect_ratios = (anchor_ratios,)*len(anchor_sizes)
+    #print(anchor_sizes, aspect_ratios)
+    anchor_generator = AnchorGenerator(anchor_sizes, aspect_ratios)
+    #print(anchor_generator.sizes, anchor_generator.aspect_ratios)
 
     roi_pooler = torchvision.ops.MultiScaleRoIAlign(featmap_names=['0'],
                                                     output_size=7,

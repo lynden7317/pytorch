@@ -9,6 +9,7 @@ import torchvision
 import cv2
 
 #from PIL import Image
+np.set_printoptions(threshold=np.inf)
 
 def getFrame(tif):
     frames = []
@@ -53,7 +54,7 @@ def mask_of_page(ctr, height, width):
     path = Path(poly_verts)
     grid = path.contains_points(points)
     grid = grid.reshape((height, width))
-    #print(grid.shape)
+    #print(grid.shape, grid)
     return grid
 
 
@@ -164,7 +165,7 @@ def ITRILabelingPageField(root, xml_path, imgs, imgData,
             if name not in frames:
                 continue
 
-            img = genImagePath(isZip[0], xml_path, root, tifName, name)
+            img = genImagePath(isZip[0], xml_path, root, tifName, source)
             for _p in _f.iter('Page'):
                 pname = _p.attrib['name'].split('_')[0]
                 # print('page name: {}'.format(pname))
@@ -240,7 +241,7 @@ def ITRILabelingPage(root, xml_path, imgs, imgData,
             if name not in frames:
                 continue
 
-            img = genImagePath(isZip[0], xml_path, root, tifName, name)
+            img = genImagePath(isZip[0], xml_path, root, tifName, source)
             imgs.append(img)
             dataID = len(imgs) - 1
             imgData[dataID] = {'frame': {'rotation': _f.attrib['rotation'], \
@@ -280,6 +281,8 @@ def ITRILabelingPage(root, xml_path, imgs, imgData,
 
 class MRCnnXMLDataset(object):
     def __init__(self, root,
+                 pil_process=True,
+                 npy_process=False,
                  transforms=None,
                  page_classes=[],
                  field_classes=[],
@@ -308,7 +311,10 @@ class MRCnnXMLDataset(object):
         ELOG = open(os.path.join(ERRDIR, 'Elogs.txt'), 'w')
         """
 
+        self.pil = pil_process
+        self.npy = npy_process
         self.transforms = transforms
+
         self.imgs = []
         self.imgData = {}
 
@@ -321,8 +327,9 @@ class MRCnnXMLDataset(object):
                 #is_pass = False
                 if is_pass:
                     if self.data_type == 'page':
+                        # ["b0090101", "b0070301", "B0080301", "B0070101"]
                         ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
-                                         page_classes=["b0090101", "b0070301", "B0080301", "B0070101"],
+                                         page_classes=self.page_classes,
                                          isZip=[True, _zref])
                     elif self.data_type == 'page_field':
                         ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
@@ -369,6 +376,19 @@ class MRCnnXMLDataset(object):
 
         height = int(_data['frame']['height'])
         width = int(_data['frame']['width'])
+        rotation = _data['frame']['rotation']
+
+        if rotation == 'R90':
+            img = np.rot90(img, 3)
+        elif rotation == 'R180':
+            img = np.rot90(img, 2)
+        elif rotation == 'R270':
+            img = np.rot90(img, 1)
+        elif rotation == 'R0':
+            img = img
+        else:
+            print('Error Rotation:{} '.format(rotation))
+
         boxes = []
         if self.data_type == 'page':
             num_objs = len(_data['pages'])
@@ -378,6 +398,8 @@ class MRCnnXMLDataset(object):
                 labels[_i] = self.page_classes.index(_p['name'])+1
                 mask = mask_of_page(_p['ctr'], height, width)
                 masks[_i, :, :] = mask
+                #print(masks[_i, :, :]*255)
+                #sys.exit(1)
                 pos = np.where(mask)
                 xmin = np.min(pos[1])
                 xmax = np.max(pos[1])
@@ -431,11 +453,23 @@ class MRCnnXMLDataset(object):
         target["area"] = area
         target["iscrowd"] = iscrowd
 
-        img = torchvision.transforms.ToPILImage()(img).convert('RGB')
-        if self.transforms is not None:
-            img, target = self.transforms(img, target)
+        if self.pil:
+            img = torchvision.transforms.ToPILImage()(img)
+            #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+            if self.transforms is not None:
+                img = self.transforms(img)
+            img = torchvision.transforms.ToTensor()(img)
 
-        img = torchvision.transforms.ToTensor()(img)
+        if self.npy:
+            if self.transforms is not None:
+                for tr in self.transforms:
+                    if len(tr) > 1:
+                        img = tr[0](img, tr[1])
+                    else:
+                        img = tr[0](img)
+            img = img.transpose((2, 0, 1))    # numpy as (H, W, C) to pytorch as (C, H, W)
+            img = torch.from_numpy(img.copy()).float()
+
         return img, target
 
     def __len__(self):
