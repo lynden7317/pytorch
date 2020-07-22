@@ -7,9 +7,13 @@ import numpy as np
 import torch
 import torchvision
 import cv2
+import skimage
+
+from dataloader import img_utils
 
 #from PIL import Image
 np.set_printoptions(threshold=np.inf)
+torch.set_printoptions(profile="full")
 
 def getFrame(tif):
     frames = []
@@ -280,7 +284,10 @@ def ITRILabelingPage(root, xml_path, imgs, imgData,
 
 
 class MRCnnXMLDataset(object):
-    def __init__(self, root,
+    def __init__(self,
+                 root,
+                 resize_img=[False, 512, 512],
+                 padding=[True, 32],
                  pil_process=True,
                  npy_process=False,
                  transforms=None,
@@ -289,6 +296,7 @@ class MRCnnXMLDataset(object):
                  data_type='page'):
         """
         :param root: the root dataset folder path
+        :param resize_img: [True, min_dim, max_dim]
         :param transforms:
         :param page_classes:
         :param field_classes:
@@ -310,7 +318,10 @@ class MRCnnXMLDataset(object):
             os.makedirs(ERRDIR)
         ELOG = open(os.path.join(ERRDIR, 'Elogs.txt'), 'w')
         """
-
+        self.is_resize = resize_img[0]
+        self.min_dim = resize_img[1]
+        self.max_dim = resize_img[2]
+        self.padding = padding
         self.pil = pil_process
         self.npy = npy_process
         self.transforms = transforms
@@ -361,15 +372,22 @@ class MRCnnXMLDataset(object):
         # load images ad masks
         _tmp = self.imgs[idx]
         _data = self.imgData[idx]
+        print(_tmp)
         if type(_tmp) is tuple:
             zref = zipfile.ZipFile(_tmp[0], "r")
             data = zref.read(_tmp[1])
             img = cv2.imdecode(np.frombuffer(data, np.uint8), 1)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            if img.ndim != 3:
+                img = skimage.color.gray2rgb(img)
+            else:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             zref.close()
         else:
             img = cv2.imread(_tmp)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            if img.ndim != 3:
+                img = skimage.color.gray2rgb(img)
+            else:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         target = {}
         #print(_data, idx)
@@ -391,12 +409,33 @@ class MRCnnXMLDataset(object):
 
         boxes = []
         if self.data_type == 'page':
+            if self.padding[0]:
+                padding = [(self.padding[1], self.padding[1]), (self.padding[1], self.padding[1]), (0, 0)]
+                img = np.pad(img, padding, mode='constant', constant_values=0)
+
+            if self.is_resize:
+                img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
+                                                                                  max_dim=self.max_dim)
+
             num_objs = len(_data['pages'])
             labels = np.zeros((num_objs,))
-            masks = np.zeros((num_objs, height, width))
+            #masks = np.zeros((num_objs, height, width))
+            masks = np.zeros((num_objs, img.shape[0], img.shape[1]))
             for _i, _p in enumerate(_data['pages']):
                 labels[_i] = self.page_classes.index(_p['name'])+1
-                mask = mask_of_page(_p['ctr'], height, width)
+                mask_org = mask_of_page(_p['ctr'], height, width)
+                mask_img = np.zeros((height, width, 1))
+                mask_img[:, :, 0] = mask_org*255
+                if self.padding[0]:
+                    mask_img = np.pad(mask_img, padding, mode='constant', constant_values=0)
+
+                if self.is_resize:
+                    mask_img = img_utils.resize_mask(mask_img, scale, resize_padding, crop)
+
+                #print(img.shape, mask_img.shape)
+                #sys.exit(1)
+
+                mask = mask_img[:, :, 0]
                 masks[_i, :, :] = mask
                 #print(masks[_i, :, :]*255)
                 #sys.exit(1)
@@ -418,11 +457,20 @@ class MRCnnXMLDataset(object):
             # === update img to the page size ==== #
             img = img[ymin:ymax, xmin:xmax, :]
 
+            if self.padding[0]:
+                padding = [(self.padding[1], self.padding[1]), (self.padding[1], self.padding[1]), (0, 0)]
+                img = np.pad(img, padding, mode='constant', constant_values=0)
+
+            if self.is_resize:
+                img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
+                                                                                  max_dim=self.max_dim)
+
             num_objs = len(_data['page']['fields'])
             #print("num_objs:{}".format(num_objs))
             labels = np.zeros((num_objs,))
             # masks: (N, height, width)
-            masks = np.zeros((num_objs, ymax-ymin, xmax-xmin))
+            #masks = np.zeros((num_objs, ymax-ymin, xmax-xmin))
+            masks = np.zeros((num_objs, img.shape[0], img.shape[1]))
             for _i, _p in enumerate(_data['page']['fields']):
                 labels[_i] = self.field_classes.index(_p[0])+1
                 fxmin = int(_p[1]['lefttop_x']) if int(_p[1]['lefttop_x']) > xmin else xmin
@@ -431,8 +479,24 @@ class MRCnnXMLDataset(object):
                 fymin = int(_p[1]['lefttop_y']) if int(_p[1]['lefttop_y']) > ymin else ymin
                 fymax = fymin+int(_p[1]['height'])
                 fymax = fymax if fymax < ymax else ymax
-                masks[_i, (fymin-ymin):(fymax-ymin), (fxmin-xmin):(fxmax-xmin)] = 1
-                boxes.append([fxmin-xmin, fymin-ymin, fxmax-xmin, fymax-ymin])
+
+                mask_img = np.zeros((ymax-ymin, xmax-xmin, 1))
+                mask_img[(fymin-ymin):(fymax-ymin), (fxmin-xmin):(fxmax-xmin), 0] = 255
+
+                if self.padding[0]:
+                    mask_img = np.pad(mask_img, padding, mode='constant', constant_values=0)
+
+                if self.is_resize:
+                    mask_img = img_utils.resize_mask(mask_img, scale, resize_padding, crop)
+
+                mask = mask_img[:, :, 0]
+                masks[_i, :, :] = mask
+                pos = np.where(mask)
+                fxmin = np.min(pos[1])
+                fxmax = np.max(pos[1])
+                fymin = np.min(pos[0])
+                fymax = np.max(pos[0])
+                boxes.append([fxmin, fymin, fxmax, fymax])
         else:
             pass
 
@@ -454,13 +518,14 @@ class MRCnnXMLDataset(object):
         target["iscrowd"] = iscrowd
 
         if self.pil:
-            img = torchvision.transforms.ToPILImage()(img)
+            #img = torchvision.transforms.ToPILImage()(img)
             #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
             if self.transforms is not None:
                 img = self.transforms(img)
             img = torchvision.transforms.ToTensor()(img)
 
         if self.npy:
+            # with 0~255 value, training may have loss in none
             if self.transforms is not None:
                 for tr in self.transforms:
                     if len(tr) > 1:

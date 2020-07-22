@@ -16,7 +16,7 @@ import cv2
 
 def app2():
     datasetRoot = "./data/ctbc"
-    pretrained_path = './training/maskrcnn_large_path_model.pth'
+    pretrained_path = './training/mrcnn_model_large_page.pth' #'./training/maskrcnn_large_path_model.pth'
 
     CTBCPAGEID = ['B0060101', 'B0060201', 'B0060301', 'B0060401', 'B0060501', 'b0060101', 'b0060901', 'B7000101', 'B7000102', 'B7000103', 'B7000104', 'B7000201', 'B7000202', 'B7000203', \
                   'B7000301', 'b7000101', 'b7000102', 'b7000901', 'B8080201', 'B8080301', 'B8080302', 'B8080501', 'B8080502', 'b8080101', 'b8080901', 'B0040101', 'B0040102', 'B0040103', \
@@ -51,7 +51,7 @@ def app2():
 
     #p_model = mask_rcnn.MaskRCNN(num_classes=1+len(CTBCPAGEID))
 
-    #p_model.load_state_dict(torch.load(pretrained_path))
+    p_model.load_state_dict(torch.load(pretrained_path))
     #print(p_model.backbone)
     #new_model = p_model.backbone.body
     #print(new_model)
@@ -66,6 +66,7 @@ def app2():
 
     # transforms=[[img_process.resize, 512], [img_process.moldImage_resnet]]
     dataset = mrcnnDataGen.MRCnnXMLDataset(datasetRoot,
+                                           resize_img=[True, 512, 512],
                                            pil_process=True,
                                            npy_process=False,
                                            page_classes=CTBCPAGEID,
@@ -74,7 +75,7 @@ def app2():
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=obj_utils.collate_fn)
 
-
+    """
     # construct an optimizer
     params = [p for p in p_model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=0.005, momentum=0.9, weight_decay=0.0005)
@@ -84,14 +85,17 @@ def app2():
                                                    gamma=0.1)
 
     # let's train it for 10 epochs
-    num_epochs = 50
+    num_epochs = 10
     for epoch in range(num_epochs):
         engine.train_one_epoch(p_model, optimizer, dataloader, device, epoch, print_freq=10)
         #lr_scheduler.step()
 
     torch.save(p_model.state_dict(), "mrcnn_model_large_page.pth")
-
     """
+
+    #engine.evaluate(p_model, dataloader, device, class_names=CTBCPAGEID, is_plot=True)
+
+
     for inputs, targets in dataloader:
         # Make a grid from batch
         print(type(inputs), len(inputs), inputs[0].shape)
@@ -108,7 +112,7 @@ def app2():
         plt.show()
         plt.imshow(masked_image)
         plt.show()
-    """
+
 
 
     """
@@ -136,6 +140,10 @@ def app2():
     """
 
 def app1():
+    import matplotlib
+    import matplotlib.pyplot as plt
+    matplotlib.use('TkAgg')
+
     datasetRoot = "../detection/dataset/test2"
     mrcnn_pth = './training/mrcnn_model_resnet50_air_page.pth'
     page_classes = ['AA001A', 'AA001B', 'AA002A', 'AA003B', 'AA004A', 'AA005B', 'ANA001A', 'ANA001B', 'ANA002A', 'ANA003A', \
@@ -150,9 +158,12 @@ def app1():
     torch.multiprocessing.freeze_support()
 
     dataset = mrcnnDataGen.MRCnnXMLDataset(datasetRoot,
+                                           resize_img=[True, 512, 512],
+                                           pil_process=True,
+                                           npy_process=False,
                                            page_classes=page_classes,
-                                           field_classes=[],
-                                           data_type='page')
+                                           field_classes=field_classes,
+                                           data_type='page_field')
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=obj_utils.collate_fn)
     print(dataloader.batch_size)
@@ -160,11 +171,11 @@ def app1():
     # print(dataset.imgData[0])
     # sys.exit(1)
 
-    mrcnn = mask_rcnn.MaskRCNN(num_classes=91) # len(page_classes) + 1
+    #mrcnn = mask_rcnn.MaskRCNN(num_classes=91) # len(page_classes) + 1
     # print(mrcnn)
-    mrcnn.to(device)
+    #mrcnn.to(device)
 
-    mrcnn.load_state_dict(torch.load(mrcnn_pth))
+    #mrcnn.load_state_dict(torch.load(mrcnn_pth))
 
     """
     coco_evaluator = engine.gen_coco_evaluator(mrcnn, dataloader)
@@ -175,9 +186,37 @@ def app1():
 
     # engine.evaluate(mrcnn, dataloader, device, class_names=page_classes, is_plot=True)
 
-    imgpath = 'img_test.jpg'
-    engine.evaluate_image(mrcnn, imgpath, device, class_names=page_classes, is_plot=True)
+    #imgpath = 'img_test.jpg'
+    #engine.evaluate_image(mrcnn, imgpath, device, class_names=page_classes, is_plot=True)
+
+    is_npy = False
+    is_pil = True
+    for inputs, targets in dataloader:
+        # Make a grid from batch
+        print(type(inputs), len(inputs), inputs[0].shape)
+        print(type(targets), targets[0].keys(), targets[0]['masks'].shape)
+
+        if is_npy:
+            img = inputs[0].byte()
+            img = img.numpy().transpose((1,2,0))
+            masked_image = img.astype(np.uint32).copy()
+
+        if is_pil:
+            img = torchvision.transforms.ToPILImage()(inputs[0])
+            img = np.array(img)
+            masked_image = img.astype(np.uint32).copy()
+
+        mask = targets[0]['masks'].byte()
+        mask = mask.numpy().transpose((1, 2, 0))
+        color = visualize.random_colors(1)
+        for _m in range(mask.shape[2]):
+            masked_image = visualize.apply_mask(masked_image, mask[:,:,_m], color[0])
+
+        plt.imshow(img)
+        plt.show()
+        plt.imshow(masked_image)
+        plt.show()
 
 
 if __name__ == '__main__':
-    app2()
+    app1()

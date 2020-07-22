@@ -155,7 +155,7 @@ class MyCustomDataset(Dataset):
         #img = torchvision.transforms.Resize((self.height, self.width))(img)
         #img = torchvision.transforms.ToTensor()(img)
         if self.pil:
-            img = torchvision.transforms.ToPILImage()(img)
+            #img = torchvision.transforms.ToPILImage()(img)
             if self.transforms is not None:
                 img = self.transforms(img)
             img = torchvision.transforms.ToTensor()(img)
