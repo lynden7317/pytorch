@@ -11,6 +11,7 @@ import torchvision
 #import coco_utils
 #import coco_eval
 #import utils
+from dataloader import img_utils
 from obj_detection.coco_utils import get_coco_api_from_dataset
 from obj_detection.coco_eval import CocoEvaluator
 from obj_detection import utils
@@ -159,7 +160,10 @@ def evaluate(model, data_loader, device, class_names=[],
 
 
 @torch.no_grad()
-def evaluate_image(model, img_path, device, class_names=[],
+def evaluate_image(model, img_path, device,
+                   class_names=[],
+                   resize_img=[False, 512, 512],
+                   padding=[True, 32],
                    score_threshold=0.7,
                    is_plot=False,
                    plot_folder='./plotEval'):
@@ -175,17 +179,34 @@ def evaluate_image(model, img_path, device, class_names=[],
     class_names = ['BG'] + class_names
 
     img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = torchvision.transforms.ToPILImage()(img).convert('RGB')
-    img = torchvision.transforms.ToTensor()(img)
-    img = torch.unsqueeze(img, 0)
-    img = img.to(device)
+    img_org = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img_pad_shape = img_org.shape
+    img_tensor = img_org
+
+    if padding[0]:
+        padding = [(padding[1], padding[1]), (padding[1], padding[1]), (0, 0)]
+        img_pad = np.pad(img_org, padding, mode='constant', constant_values=0)
+        img_pad_shape = img_pad.shape
+        img_tensor = img_pad
+    if resize_img[0]:
+        if padding[0]:
+            in_img = img_pad
+        else:
+            in_img = img_org
+        img_resize, resize_window, resize_scale, resize_padding, crop = img_utils.resize_image(in_img, min_dim=resize_img[1], max_dim=resize_img[2])
+        img_tensor = img_resize
+
+    #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
+    _img = torchvision.transforms.ToPILImage()(img_tensor)
+    _img = torchvision.transforms.ToTensor()(_img)
+    _img = torch.unsqueeze(_img, 0)
+    _img = _img.to(device)
 
     model.eval()
     model_time = time.time()
-    output = model(img)[0]
+    output = model(_img)[0]
 
-    print(output)
+    print(output.keys())
     #outputs = [{k: v.to(device) for k, v in t.items()} for t in output]
     #print(output)
     if len(output['labels']) == 0:
@@ -196,13 +217,41 @@ def evaluate_image(model, img_path, device, class_names=[],
     _labels = output['labels'].cpu().clone().numpy()
     _scores = output['scores'].cpu().clone().numpy()
     _masks = output['masks'].cpu().clone().numpy()
+    _masks = _masks.transpose((0, 2, 3, 1))    # (N, C, H, W) --> (N, H, W, C)
+    print(_masks.shape)
+
+    if resize_img[0]:
+        # Translate normalized coordinates in the resized image to pixel
+        # coordinates in the original image before resizing
+        print(_boxes, "window", resize_window)
+        wx1, wy1, wx2, wy2 = resize_window
+        shift = np.array([wx1, wy1, wx1, wy1])
+        wh = wy2 - wy1  # window height
+        ww = wx2 - wx1  # window width
+        _scale = np.array([ww, wh, ww, wh])
+        # Convert boxes to normalized coordinates on the window
+        _boxes = np.divide(_boxes-shift, _scale)
+        # Convert boxes to pixel coordinates on the original image
+        _boxes = img_utils.denorm_boxes(_boxes, img_pad_shape[:2])
+        print(_boxes, img_pad.shape)
+        full_masks = np.zeros((_masks.shape[0], img_pad_shape[0], img_pad_shape[1], 1))
+        for _m in range(_masks.shape[0]):
+            full_mask = img_utils.denorm_mask(_masks[_m, :, :, 0], resize_scale, resize_padding, img_pad_shape[:2])
+            full_mask = np.expand_dims(full_mask, axis=2)
+            full_masks[_m, :, :, :] = full_mask
+        _masks = full_masks
+    print(_boxes.shape, _labels.shape, _scores.shape, _masks.shape)
+    #sys.exit(1)
+
     # ==== update results by score_threshold ==== #
     scores_pass = np.where(_scores > score_threshold)
     boxes = _boxes[scores_pass]
     labels = _labels[scores_pass]
     scores = _scores[scores_pass]
-    masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
+    #masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
+    masks = _masks[scores_pass]
     print(type(boxes), type(labels), type(scores), type(masks))
+    print(boxes.shape, labels.shape, scores.shape, masks.shape)
     result = {"boxes": boxes, "labels": labels, "scores": scores, "masks": masks, "class_names": class_names}
 
     model_time = time.time() - model_time
@@ -210,12 +259,17 @@ def evaluate_image(model, img_path, device, class_names=[],
     print(boxes.shape, labels.shape, scores.shape, masks.shape)
 
     if is_plot:
-        img = img[0].cpu().clone()
-        img = torchvision.transforms.ToPILImage()(img)
-        img = np.array(img)
+        #img = img[0].cpu().clone()
+        #img = torchvision.transforms.ToPILImage()(img)
+        #img = np.array(img)
+        if resize_img[0]:
+            img = in_img
+        else:
+            img = img_tensor
         _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
         visualize.display_instances(img, boxes, masks, labels,
                                     class_names,
+                                    is_display=True,
                                     is_save=[True, _name])
 
     return result

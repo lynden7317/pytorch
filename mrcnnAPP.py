@@ -14,9 +14,12 @@ from obj_detection import visualize
 
 import cv2
 
+import warnings
+warnings.filterwarnings("ignore")
+
 def app2():
     datasetRoot = "./data/ctbc"
-    pretrained_path = './training/mrcnn_model_large_page.pth' #'./training/maskrcnn_large_path_model.pth'
+    pretrained_path = './training/mrcnn_model_large_page_100.pth' #'./training/mrcnn_model_large_page.pth' #'./training/maskrcnn_large_page_model.pth'
 
     CTBCPAGEID = ['B0060101', 'B0060201', 'B0060301', 'B0060401', 'B0060501', 'b0060101', 'b0060901', 'B7000101', 'B7000102', 'B7000103', 'B7000104', 'B7000201', 'B7000202', 'B7000203', \
                   'B7000301', 'b7000101', 'b7000102', 'b7000901', 'B8080201', 'B8080301', 'B8080302', 'B8080501', 'B8080502', 'b8080101', 'b8080901', 'B0040101', 'B0040102', 'B0040103', \
@@ -59,21 +62,101 @@ def app2():
     print(p_model)
 
     #import img_process
-    from tools import img_process
+    #from tools import img_process
+    from dataloader import img_utils
     import matplotlib
     import matplotlib.pyplot as plt
     matplotlib.use('TkAgg')
 
-    # transforms=[[img_process.resize, 512], [img_process.moldImage_resnet]]
+    transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+    #transforms = torchvision.transforms.Compose([
+    #                     torchvision.transforms.ToTensor(),
+    #                     torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
     dataset = mrcnnDataGen.MRCnnXMLDataset(datasetRoot,
-                                           resize_img=[True, 512, 512],
+                                           resize_img=[False, 512, 512],
+                                           padding=[True, 32],
                                            pil_process=True,
                                            npy_process=False,
+                                           transforms=transforms,
                                            page_classes=CTBCPAGEID,
                                            field_classes=[],
                                            data_type='page')
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=obj_utils.collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=False, collate_fn=obj_utils.collate_fn)
+
+    imgpath = 'bank_test.jpg'
+    engine.evaluate_image(p_model, imgpath, device,
+                          resize_img=[True, 512, 512],
+                          padding=[True, 32],
+                          class_names=CTBCPAGEID, is_plot=True)
+
+    """
+    from dataloader import img_utils
+    p_model.eval()
+    for inputs, targets in dataloader:
+        # Make a grid from batch
+        print(type(inputs), len(inputs), inputs[0].shape)
+        print(type(targets), targets[0].keys(), targets[0]['masks'].shape)
+
+        img = torchvision.transforms.ToPILImage()(inputs[1])
+        img_org = np.array(img)
+        original_img_shape = img_org.shape
+        print("ori shape: {}".format(original_img_shape))
+
+        padding = [(32, 32), (32, 32), (0, 0)]
+        img_pad = np.pad(img_org, padding, mode='constant', constant_values=0)
+        img_pad_shape = img_pad.shape
+        print("img_pad: {}".format(img_pad.shape))
+        img_resize, window, scale, resize_padding, crop = img_utils.resize_image(img_pad, min_dim=512, max_dim=512)
+        img_resize_shape = img_resize.shape
+        print("scale: {}, resize_padding: {}".format(scale, resize_padding))
+
+        _img_resize = torchvision.transforms.ToTensor()(img_resize)
+        _img_resize = torch.unsqueeze(_img_resize, 0)
+        _img_resize = _img_resize.to(device)
+        output = p_model(_img_resize)[0]
+        print(output.keys(), output['masks'].shape, output['scores'])
+
+        boxes = output['boxes'].detach().cpu().clone().numpy()
+        labels = output['labels'].detach().cpu().clone().numpy()
+        scores = output['scores'].detach().cpu().clone().numpy()
+        masks = output['masks'].detach().cpu().clone().numpy()
+        masks = masks.transpose((0, 2, 3, 1))
+        print(boxes[0], masks[0].shape)
+
+
+        # Translate normalized coordinates in the resized image to pixel
+        # coordinates in the original image before resizing
+        print(boxes, "window", window)
+        wx1, wy1, wx2, wy2 = window
+        shift = np.array([wx1, wy1, wx1, wy1])
+        wh = wy2 - wy1  # window height
+        ww = wx2 - wx1  # window width
+        _scale = np.array([ww, wh, ww, wh])
+        # Convert boxes to normalized coordinates on the window
+        boxes = np.divide(boxes - shift, _scale)
+        # Convert boxes to pixel coordinates on the original image
+        boxes = img_utils.denorm_boxes(boxes, img_pad_shape[:2])
+        print(boxes, img_pad.shape)
+
+        full_mask = masks[0][:, :, 0]
+        full_mask = img_utils.denorm_mask(masks[0][:, :, 0], scale, resize_padding, img_pad_shape[:2])
+        #full_mask = img_utils.unmold_mask(masks[0][:, :, 0], boxes[0], img_pad_shape[:2])
+        #full_mask = np.where(full_mask >= 0.5, 1, 0).astype(np.bool)
+        full_mask = np.expand_dims(full_mask, axis=2)
+
+        color = visualize.random_colors(1)
+        #mask_test = np.zeros((img_pad_shape[0], img_pad_shape[1], 1))
+        #mask_test[int(boxes[0][1]):int(boxes[0][3]), int(boxes[0][0]):int(boxes[0][2]), 0] = 1
+
+        masked_image = img_pad.astype(np.uint32).copy()
+        masked_image = visualize.apply_mask(masked_image, full_mask[:, :, 0], color[0])
+
+        plt.imshow(img_pad)
+        plt.show()
+        plt.imshow(masked_image)
+        plt.show()
+    """
 
     """
     # construct an optimizer
@@ -85,34 +168,45 @@ def app2():
                                                    gamma=0.1)
 
     # let's train it for 10 epochs
-    num_epochs = 10
+    num_epochs = 100
     for epoch in range(num_epochs):
         engine.train_one_epoch(p_model, optimizer, dataloader, device, epoch, print_freq=10)
         #lr_scheduler.step()
 
-    torch.save(p_model.state_dict(), "mrcnn_model_large_page.pth")
+    torch.save(p_model.state_dict(), "mrcnn_model_large_page_100.pth")
     """
 
     #engine.evaluate(p_model, dataloader, device, class_names=CTBCPAGEID, is_plot=True)
 
-
+    """
+    is_npy = False
+    is_pil = True
     for inputs, targets in dataloader:
         # Make a grid from batch
         print(type(inputs), len(inputs), inputs[0].shape)
         print(type(targets), targets[0].keys(), targets[0]['masks'].shape)
-        img = inputs[0].byte()
-        img = img.numpy().transpose((1,2,0))
+
+        if is_npy:
+            img = inputs[0].byte()
+            img = img.numpy().transpose((1, 2, 0))
+            masked_image = img.astype(np.uint32).copy()
+
+        if is_pil:
+            img = torchvision.transforms.ToPILImage()(inputs[0])
+            img = np.array(img)
+            masked_image = img.astype(np.uint32).copy()
+
         mask = targets[0]['masks'].byte()
-        mask = mask.numpy().transpose((1, 2, 0))[:,:,0]
-        masked_image = img.astype(np.uint32).copy()
-        color = visualize.random_colors(5)
-        masked_image = visualize.apply_mask(masked_image, mask, color[0])
+        mask = mask.numpy().transpose((1, 2, 0))
+        color = visualize.random_colors(1)
+        for _m in range(mask.shape[2]):
+            masked_image = visualize.apply_mask(masked_image, mask[:, :, _m], color[0])
 
         plt.imshow(img)
         plt.show()
         plt.imshow(masked_image)
         plt.show()
-
+    """
 
 
     """
@@ -157,10 +251,15 @@ def app1():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
 
+    transforms = torchvision.transforms.Compose([
+                           torchvision.transforms.ToTensor(),
+                           torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+
     dataset = mrcnnDataGen.MRCnnXMLDataset(datasetRoot,
                                            resize_img=[True, 512, 512],
                                            pil_process=True,
                                            npy_process=False,
+                                           transforms=transforms,
                                            page_classes=page_classes,
                                            field_classes=field_classes,
                                            data_type='page_field')
@@ -219,4 +318,4 @@ def app1():
 
 
 if __name__ == '__main__':
-    app1()
+    app2()

@@ -5,6 +5,7 @@ import numpy as np
 
 from skimage.measure import find_contours
 
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.patches import Polygon
@@ -107,7 +108,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     if not N:
         print("\n*** No instances to display *** \n")
     else:
-        assert boxes.shape[0] == masks.shape[-1] == class_ids.shape[0]
+        assert boxes.shape[0] == masks.shape[0] == class_ids.shape[0]
 
     if not ax:
         _, ax = plt.subplots(1, figsize=figsize)
@@ -119,7 +120,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     height, width = image.shape[:2]
     ax.set_ylim(height + 10, -10)
     ax.set_xlim(-10, width + 10)
-    ax.axis('off')
+    ax.axis('on')
     ax.set_title(title)
 
     masked_image = image.astype(np.uint32).copy()
@@ -130,7 +131,6 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         if not np.any(boxes[i]):
             # Skip this instance. Has no bbox. Likely lost in image cropping.
             continue
-        #y1, x1, y2, x2 = boxes[i]
         x1, y1, x2, y2 = int(boxes[i][0]), int(boxes[i][1]), int(boxes[i][2]), int(boxes[i][3])
         p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
                               alpha=0.7, linestyle="dashed",
@@ -147,7 +147,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
                 color='w', size=11, backgroundcolor="black")
 
         # Mask
-        mask = masks[:, :, i]
+        mask = masks[i, :, :, 0]
         masked_image = apply_mask(masked_image, mask, color)
 
         # Mask Polygon
@@ -164,19 +164,14 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             ax.add_patch(p)
         """
     img = masked_image.astype(np.uint8)
-    if is_display:
-        import matplotlib
-        plt.ioff()
-        matplotlib.use('Tkagg')
-        ax.imshow(img)
-        plt.show()
-
     if is_save[0]:
-        import matplotlib
-        matplotlib.use('agg')
         print("save plot {}".format(is_save[1]))
         ax.imshow(img)
         plt.savefig(is_save[1])
+
+    if is_display:
+        ax.imshow(img)
+        plt.show()
 
 # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
 #                             class_names, r['scores'])

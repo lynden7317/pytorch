@@ -6,6 +6,51 @@ import skimage.transform
 import warnings
 from distutils.version import LooseVersion
 
+def denorm_boxes(boxes, shape):
+    """Converts boxes from normalized coordinates to pixel coordinates.
+    boxes: [N, (x1, y1, x2, y2)] in normalized coordinates
+    shape: [..., (height, width)] in pixels
+
+    Note: In pixel coordinates (x2, y2) is outside the box. But in normalized
+    coordinates it's inside the box.
+
+    Returns:
+        [N, (x1, y1, x2, y2)] in pixel coordinates
+    """
+    h, w = shape
+    scale = np.array([w - 1, h - 1, w - 1, h - 1])
+    shift = np.array([0, 0, 1, 1])
+    return np.around(np.multiply(boxes, scale) + shift).astype(np.int32)
+
+def denorm_mask(mask, scale, padding, outshape):
+    print(padding)
+    # remove padding
+    x_pad = padding[0][0]+padding[0][1]
+    y_pad = padding[1][0]+padding[1][1]
+    unpad_mask = np.zeros((mask.shape[0]-x_pad, mask.shape[1]-y_pad))
+    unpad_mask = mask[0+padding[0][0]:mask.shape[0]-padding[0][1], 0+padding[1][0]:mask.shape[1]-padding[1][1]]
+    print(unpad_mask.shape)
+    # Suppress warning from scipy 0.13.0, the output shape of zoom() is
+    # calculated with round() instead of int()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        de_mask = scipy.ndimage.zoom(unpad_mask, zoom=[1/scale, 1/scale], order=0)
+    # confirm to the real output size
+    out = np.zeros((outshape[0], outshape[1]))
+    out[0:de_mask.shape[0], 0:de_mask.shape[1]] = de_mask
+    print(out.shape)
+    return out
+
+def moldImage_resnet(img):
+    """Expects an RGB image (or array of images) and subtracts
+    the mean pixel and converts it to float. Expects image colors in RGB order.
+    """
+    #print('moldImage_resnet')
+    img[:,:,:] = img[:,:,:].astype('float32')
+    img[:,:,:] = img[:,:,:] - np.array([123.7, 116.8, 103.9]) #RGB
+    return img
+
+
 def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):
     """Resizes an image keeping the aspect ratio unchanged.
 
@@ -31,7 +76,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
 
     Returns:
     image: the resized image
-    window: (y1, x1, y2, x2). If max_dim is provided, padding might
+    window: (x1, y1, x2, y2). If max_dim is provided, padding might
         be inserted in the returned image. If so, this window is the
         coordinates of the image part of the full image (excluding
         the padding). The x2, y2 pixels are not included.
@@ -40,7 +85,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
     """
     # Keep track of image dtype and return results in the same dtype
     image_dtype = image.dtype
-    # Default window (y1, x1, y2, x2) and default scale == 1.
+    # Default window (x1, y1, x2, y2) and default scale == 1.
     h, w = image.shape[:2]
     if w <= 0:
         print('Error:resize_image:w<=0')
@@ -50,7 +95,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
         print('Error:resize_image:h<=0')
         raise ValueError('Error:resize_image:h<=0')
 
-    window = (0, 0, h, w)
+    window = (0, 0, w, h)
     scale = 1
     padding = [(0, 0), (0, 0), (0, 0)]
     crop = None
@@ -88,7 +133,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
         right_pad = max_dim - w - left_pad
         padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
         image = np.pad(image, padding, mode='constant', constant_values=0)
-        window = (top_pad, left_pad, h + top_pad, w + left_pad)
+        window = (left_pad, top_pad, w + left_pad, h + top_pad)
     elif mode == "pad64":
         h, w = image.shape[:2]
         # Both sides must be divisible by 64
@@ -109,13 +154,15 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
             left_pad = right_pad = 0
         padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
         image = np.pad(image, padding, mode='constant', constant_values=0)
-        window = (top_pad, left_pad, h + top_pad, w + left_pad)
+        #window = (top_pad, left_pad, h + top_pad, w + left_pad)
+        window = (left_pad, top_pad, w + left_pad, h + top_pad)
     elif mode == "crop":
         # Pick a random crop
         h, w = image.shape[:2]
         y = random.randint(0, (h - min_dim))
         x = random.randint(0, (w - min_dim))
-        crop = (y, x, min_dim, min_dim)
+        #crop = (y, x, min_dim, min_dim)
+        crop = (x, y, min_dim, min_dim)
         image = image[y:y + min_dim, x:x + min_dim]
         window = (0, 0, min_dim, min_dim)
     else:
@@ -138,7 +185,8 @@ def resize_mask(mask, scale, padding, crop=None):
         warnings.simplefilter("ignore")
         mask = scipy.ndimage.zoom(mask, zoom=[scale, scale, 1], order=0)
     if crop is not None:
-        y, x, h, w = crop
+        #y, x, h, w = crop
+        x, y, h, w = crop
         mask = mask[y:y + h, x:x + w]
     else:
         mask = np.pad(mask, padding, mode='constant', constant_values=0)
