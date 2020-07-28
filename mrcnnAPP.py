@@ -47,6 +47,12 @@ def app2():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
 
+    import imgaug.augmenters as iaa
+    seq_aug = iaa.Sequential([
+        iaa.Crop(px=(0, 16)),
+        iaa.Fliplr(1.0)
+    ])
+
     #print(1+len(CTBCPAGEID))
     p_model = mask_rcnn.MaskRCNN(backbone='resnet50',
                                  anchor_ratios=(0.333333, 0.5, 1, 2, 3),
@@ -75,6 +81,7 @@ def app2():
     dataset = mrcnnDataGen.MRCnnXMLDataset(datasetRoot,
                                            resize_img=[False, 512, 512],
                                            padding=[True, 32],
+                                           augmentation=seq_aug,
                                            pil_process=True,
                                            npy_process=False,
                                            transforms=transforms,
@@ -178,7 +185,7 @@ def app2():
 
     #engine.evaluate(p_model, dataloader, device, class_names=CTBCPAGEID, is_plot=True)
 
-    """
+
     is_npy = False
     is_pil = True
     for inputs, targets in dataloader:
@@ -206,7 +213,7 @@ def app2():
         plt.show()
         plt.imshow(masked_image)
         plt.show()
-    """
+
 
 
     """

@@ -10,6 +10,8 @@ import torchvision
 import cv2
 from imutils import paths
 
+from dataloader import img_utils
+
 import matplotlib.pyplot as plt
 
 np.set_printoptions(threshold=np.inf)
@@ -116,18 +118,23 @@ def ImageFolderDataLoader(data_dir, batch_size=4, shuffle=True, partition=['trai
     return dataloaders, dataset_sizes, class_names
 
 class MyCustomDataset(Dataset):
-    def __init__(self, datafolder,
+    def __init__(self,
+                 root,
+                 resize_img=[False, 224, 224],
+                 padding=[True, 32],
+                 augmentation=None,
                  pil_process=True,
                  npy_process=False,
                  transforms=None,
-                 height=224, width=224,
                  classIDs={}):
         # stuff
-        self.datafolder = datafolder
-        self.height = height
-        self.width = width
+        self.datafolder = root
         self.classIDs = classIDs
 
+        self.is_resize = resize_img[0]
+        self.min_dim = resize_img[1]
+        self.max_dim = resize_img[2]
+        self.padding = padding
         self.pil = pil_process
         self.npy = npy_process
         self.transforms = transforms
@@ -141,19 +148,18 @@ class MyCustomDataset(Dataset):
         # then it applies the operations in the transforms with the order that it is created.
         imgpath = self.datalist[index]
         img = cv2.imread(imgpath)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        #img = Image.open(imgpath).convert('RGB')
+        if img.ndim != 3:
+            img = img_utils.gray_3_ch(img)
+            #img = skimage.color.gray2rgb(img)
+        else:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
         #print(type(img))
         img_name = self.__img_name(imgpath)
 
         lab_str = img_name.split("_")[0]
         label = self.classIDs[lab_str]
 
-        #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
-        #if self.transforms is not None:
-        #    img = self.transforms(img)
-        #img = torchvision.transforms.Resize((self.height, self.width))(img)
-        #img = torchvision.transforms.ToTensor()(img)
         if self.pil:
             #img = torchvision.transforms.ToPILImage()(img)
             if self.transforms is not None:

@@ -1,3 +1,4 @@
+import cv2
 import scipy
 import random
 import numpy as np
@@ -5,6 +6,43 @@ import skimage
 import skimage.transform
 import warnings
 from distutils.version import LooseVersion
+
+
+def img_augmentation(img, augmentation):
+    # Make augmenters deterministic to apply similarly to images and masks
+    det = augmentation.to_deterministic()
+    img = det.augment_image(img)
+    return img, det
+
+def mask_augmentation(img, mask, det):
+    import imgaug
+    MASK_AUGMENTERS = ["Sequential", "SomeOf", "OneOf", "Sometimes",
+                       "Fliplr", "Flipud", "CropAndPad",
+                       "Affine", "PiecewiseAffine", "Multiply", "Grayscale", "AdditiveGaussianNoise"]
+
+    def hook(images, augmenter, parents, default):
+        """Determines which augmenters to apply to masks."""
+        return (augmenter.__class__.__name__ in MASK_AUGMENTERS)
+
+    # Store shapes before augmentation to compare
+    img_shape = img.shape
+    mask_shape = mask.shape
+
+    mask = det.augment_image(mask, hooks=imgaug.HooksImages(activator=hook))
+    # Verify that shapes didn't change
+    assert img.shape == img_shape, "Augmentation shouldn't change image size"
+    assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
+
+    return mask
+
+
+def gray_3_ch(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _timg = np.zeros((gray.shape[0], gray.shape[1], 3))
+    _timg[:, :, 0] = gray
+    _timg[:, :, 1] = gray
+    _timg[:, :, 2] = gray
+    return _timg
 
 def denorm_boxes(boxes, shape):
     """Converts boxes from normalized coordinates to pixel coordinates.

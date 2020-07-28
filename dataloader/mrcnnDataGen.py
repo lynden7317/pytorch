@@ -288,6 +288,7 @@ class MRCnnXMLDataset(object):
                  root,
                  resize_img=[False, 512, 512],
                  padding=[True, 32],
+                 augmentation=None,
                  pil_process=True,
                  npy_process=False,
                  transforms=None,
@@ -322,6 +323,7 @@ class MRCnnXMLDataset(object):
         self.min_dim = resize_img[1]
         self.max_dim = resize_img[2]
         self.padding = padding
+        self.augmentation = augmentation
         self.pil = pil_process
         self.npy = npy_process
         self.transforms = transforms
@@ -372,20 +374,22 @@ class MRCnnXMLDataset(object):
         # load images ad masks
         _tmp = self.imgs[idx]
         _data = self.imgData[idx]
-        print(_tmp)
+        #print(_tmp)
         if type(_tmp) is tuple:
             zref = zipfile.ZipFile(_tmp[0], "r")
             data = zref.read(_tmp[1])
             img = cv2.imdecode(np.frombuffer(data, np.uint8), 1)
             if img.ndim != 3:
-                img = skimage.color.gray2rgb(img)
+                img = img_utils.gray_3_ch(img)
+                #img = skimage.color.gray2rgb(img)
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             zref.close()
         else:
             img = cv2.imread(_tmp)
             if img.ndim != 3:
-                img = skimage.color.gray2rgb(img)
+                img = img_utils.gray_3_ch(img)
+                #img = skimage.color.gray2rgb(img)
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -417,6 +421,10 @@ class MRCnnXMLDataset(object):
                 img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
                                                                                   max_dim=self.max_dim)
 
+            if self.augmentation:
+                img, det = img_utils.img_augmentation(img, self.augmentation)
+                print("data augmentation: {}".format(det))
+
             num_objs = len(_data['pages'])
             labels = np.zeros((num_objs,))
             #masks = np.zeros((num_objs, height, width))
@@ -425,12 +433,15 @@ class MRCnnXMLDataset(object):
                 labels[_i] = self.page_classes.index(_p['name'])+1
                 mask_org = mask_of_page(_p['ctr'], height, width)
                 mask_img = np.zeros((height, width, 1))
-                mask_img[:, :, 0] = mask_org*255
+                mask_img[:, :, 0] = mask_org*1.0
                 if self.padding[0]:
                     mask_img = np.pad(mask_img, padding, mode='constant', constant_values=0)
 
                 if self.is_resize:
                     mask_img = img_utils.resize_mask(mask_img, scale, resize_padding, crop)
+
+                if self.augmentation:
+                    mask_img = img_utils.mask_augmentation(img, mask_img, det)
 
                 #print(img.shape, mask_img.shape)
                 #sys.exit(1)
@@ -481,7 +492,7 @@ class MRCnnXMLDataset(object):
                 fymax = fymax if fymax < ymax else ymax
 
                 mask_img = np.zeros((ymax-ymin, xmax-xmin, 1))
-                mask_img[(fymin-ymin):(fymax-ymin), (fxmin-xmin):(fxmax-xmin), 0] = 255
+                mask_img[(fymin-ymin):(fymax-ymin), (fxmin-xmin):(fxmax-xmin), 0] = 1.0
 
                 if self.padding[0]:
                     mask_img = np.pad(mask_img, padding, mode='constant', constant_values=0)
@@ -522,16 +533,13 @@ class MRCnnXMLDataset(object):
             #img = torchvision.transforms.ToPILImage()(img).convert('RGB')
             if self.transforms is not None:
                 img = self.transforms(img)
-            img = torchvision.transforms.ToTensor()(img)
+            #img = torchvision.transforms.ToTensor()(img)
 
         if self.npy:
             # with 0~255 value, training may have loss in none
             if self.transforms is not None:
                 for tr in self.transforms:
-                    if len(tr) > 1:
-                        img = tr[0](img, tr[1])
-                    else:
-                        img = tr[0](img)
+                    img = tr[0](img)
             img = img.transpose((2, 0, 1))    # numpy as (H, W, C) to pytorch as (C, H, W)
             img = torch.from_numpy(img.copy()).float()
 
