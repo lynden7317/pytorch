@@ -95,6 +95,46 @@ def _get_iou_types(model):
         iou_types.append("keypoints")
     return iou_types
 
+def cal_iou(target, predict):
+    iouDict = {}
+    print(target['labels'], predict['masks'].shape, target['masks'].shape)
+    labels = target['labels'].cpu().clone().numpy()
+    masks = target['masks'].cpu().clone().numpy()
+    h, w = masks.shape[1], masks.shape[2]
+    print(labels, type(labels), predict['labels'], type(predict['labels']))
+    summary_list = list(set(labels.tolist()+predict['labels'].tolist()))
+    print("summary list: {}".format(summary_list))
+    for k in summary_list:
+        print(masks.shape)
+        if k not in iouDict.keys():
+            iouDict[k] = {'target': np.zeros((h, w)), 'predict': np.zeros((h, w)), 'iou': 0.0}
+
+    for i, k in enumerate(labels):
+        iouDict[k]['target'][np.where(masks[i,:,:]>=0.5)] = 1
+
+    for i, k in enumerate(predict['labels']):
+        if k in iouDict.keys():
+            _mask = predict['masks'][i,:,:,0]
+            iouDict[k]['predict'][np.where(_mask[:,:]>=0.5)] = 1
+
+    for k in iouDict.keys():
+        true_area = np.sum(iouDict[k]['target'])
+        pred_area = np.sum(iouDict[k]['predict'])
+        intersection = np.zeros((h, w))
+        _union = iouDict[k]['target'] + iouDict[k]['predict']
+        intersection[np.where(_union > 1.0)] = 1
+        inter_area = np.sum(intersection)
+        union = true_area + pred_area - inter_area
+        iou = inter_area / union
+        iouDict[k]['iou'] = iou
+        #tar = iouDict[k]['mask'].flatten()
+        #pred = iouDict[k]['predict'].flatten()
+        print("true area:{}, predict area:{}, intersection:{}".format(true_area, pred_area, inter_area))
+        print("iou: {}".format(iou))
+
+    return iouDict
+
+
 @torch.no_grad()
 def evaluate(model, data_loader, device, class_names=[],
              score_threshold=0.7,
@@ -121,6 +161,7 @@ def evaluate(model, data_loader, device, class_names=[],
 
         outputs = [{k: v.to(device) for k, v in t.items()} for t in outputs]
         for _i, t in enumerate(outputs):
+            print(targets[_i].keys())
             if is_plot:
                 img = images[_i].cpu().clone()
                 img = torchvision.transforms.ToPILImage()(img)
@@ -137,18 +178,32 @@ def evaluate(model, data_loader, device, class_names=[],
             _labels = t['labels'].cpu().clone().numpy()
             _scores = t['scores'].cpu().clone().numpy()
             _masks = t['masks'].cpu().clone().numpy()
-            #_masks = t['masks'].cpu().clone().numpy().transpose(1, 2, 3, 0)[0]
+            _masks = _masks.transpose((0, 2, 3, 1))    # (N, C, H, W) --> (N, H, W, C)
             # ==== update results by score_threshold ==== #
             scores_pass = np.where(_scores > score_threshold)
             boxes = _boxes[scores_pass]
             labels = _labels[scores_pass]
             scores = _scores[scores_pass]
-            masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
+            masks = _masks[scores_pass]
+            #masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
             #print(scores_pass, scores_pass[0])
-            #print(boxes.shape, labels.shape, scores.shape, masks.shape)
+            print(boxes.shape, labels.shape, scores.shape, masks.shape)
+            print(labels, targets[_i]['labels'])
+            IoUs = cal_iou(targets[_i], {'labels':labels, 'masks':masks})
+            for _k in IoUs.keys():
+                print("{}, iou:{}".format(_k, IoUs[_k]['iou']))
+
             if is_plot:
                 _name = os.path.join(plot_folder, "img_b{}_{}_pred.png".format(batch, _i))
                 visualize.display_instances(img, boxes, masks, labels,
+                                            class_names,
+                                            is_save=[True, _name])
+
+                _name = os.path.join(plot_folder, "img_b{}_{}_true.png".format(batch, _i))
+                tboxes = targets[_i]['boxes'].cpu().clone().numpy()
+                tmasks = targets[_i]['masks'].cpu().clone().numpy()
+                tmasks = np.expand_dims(tmasks, axis=3)
+                visualize.display_instances(img, tboxes, tmasks, labels,
                                             class_names,
                                             is_save=[True, _name])
 
