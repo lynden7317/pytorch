@@ -135,6 +135,7 @@ class MyCustomDataset(Dataset):
         self.min_dim = resize_img[1]
         self.max_dim = resize_img[2]
         self.padding = padding
+        self.augmentation = augmentation
         self.pil = pil_process
         self.npy = npy_process
         self.transforms = transforms
@@ -153,6 +154,18 @@ class MyCustomDataset(Dataset):
             #img = skimage.color.gray2rgb(img)
         else:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        if self.padding[0]:
+            padding = [(self.padding[1], self.padding[1]), (self.padding[1], self.padding[1]), (0, 0)]
+            img = np.pad(img, padding, mode='constant', constant_values=0)
+
+        if self.is_resize:
+            img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
+                                                                              max_dim=self.max_dim)
+
+        if self.augmentation:
+            img, det = img_utils.img_augmentation(img, self.augmentation)
+            print("data augmentation: {}".format(det))
 
         #print(type(img))
         img_name = self.__img_name(imgpath)

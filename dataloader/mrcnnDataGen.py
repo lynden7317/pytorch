@@ -476,6 +476,10 @@ class MRCnnXMLDataset(object):
                 img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
                                                                                   max_dim=self.max_dim)
 
+            if self.augmentation:
+                img, det = img_utils.img_augmentation(img, self.augmentation)
+                print("data augmentation: {}".format(det))
+
             num_objs = len(_data['page']['fields'])
             #print("num_objs:{}".format(num_objs))
             labels = np.zeros((num_objs,))
@@ -499,6 +503,9 @@ class MRCnnXMLDataset(object):
 
                 if self.is_resize:
                     mask_img = img_utils.resize_mask(mask_img, scale, resize_padding, crop)
+
+                if self.augmentation:
+                    mask_img = img_utils.mask_augmentation(img, mask_img, det)
 
                 mask = mask_img[:, :, 0]
                 masks[_i, :, :] = mask
