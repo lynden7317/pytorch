@@ -127,16 +127,18 @@ def cal_iou(target, predict):
         union = true_area + pred_area - inter_area
         iou = inter_area / union
         iouDict[k]['iou'] = iou
-        #tar = iouDict[k]['mask'].flatten()
-        #pred = iouDict[k]['predict'].flatten()
-        print("true area:{}, predict area:{}, intersection:{}".format(true_area, pred_area, inter_area))
-        print("iou: {}".format(iou))
+        iouDict[k]['true_area'] = true_area
+        iouDict[k]['pred_area'] = true_area
+        iouDict[k]['inter_area'] = inter_area
+        #print("true area:{}, predict area:{}, intersection:{}".format(true_area, pred_area, inter_area))
+        #print("iou: {}".format(iou))
 
     return iouDict
 
 
 @torch.no_grad()
-def evaluate(model, data_loader, device, class_names=[],
+def evaluate(model, data_loader, device,
+             class_names=[],
              score_threshold=0.7,
              is_plot=False,
              plot_folder='./plotEval'):
@@ -152,6 +154,16 @@ def evaluate(model, data_loader, device, class_names=[],
     header = 'Evaluation:'
 
     batch = 0
+    Stat_summary = {}
+    IoUDict = {}
+    for _c in class_names:
+        Stat_summary[_c] = {'0.5':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
+                            '0.6':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
+                            '0.7':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
+                            '0.8':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
+                            '0.9':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0}}
+        IoUDict[_c] = {'tp':[], 'fp':0, 'fn':0}
+
     for images, targets in metric_logger.log_every(data_loader, data_loader.batch_size, header):
         images = list(img.to(device) for img in images)
 
@@ -192,6 +204,19 @@ def evaluate(model, data_loader, device, class_names=[],
             IoUs = cal_iou(targets[_i], {'labels':labels, 'masks':masks})
             for _k in IoUs.keys():
                 print("{}, iou:{}".format(_k, IoUs[_k]['iou']))
+                cname = class_names[_k]
+                if IoUs[_k]['true_area'] > 0 and IoUs[_k]['pred_area'] > 0:
+                    # tp
+                    iou = IoUs[_k]['iou']
+                    IoUDict[cname]['tp'].append(iou)
+                elif IoUs[_k]['true_area'] == 0 and IoUs[_k]['pred_area'] > 0:
+                    # fp
+                    IoUDict[cname]['fp'] += 1
+                elif IoUs[_k]['true_area'] > 0 and IoUs[_k]['pred_area'] == 0:
+                    # fn
+                    IoUDict[cname]['fn'] += 1
+                else:
+                    pass
 
             if is_plot:
                 _name = os.path.join(plot_folder, "img_b{}_{}_pred.png".format(batch, _i))
@@ -200,19 +225,36 @@ def evaluate(model, data_loader, device, class_names=[],
                                             is_save=[True, _name])
 
                 _name = os.path.join(plot_folder, "img_b{}_{}_true.png".format(batch, _i))
+                tlabels = targets[_i]['labels'].cpu().clone().numpy()
                 tboxes = targets[_i]['boxes'].cpu().clone().numpy()
                 tmasks = targets[_i]['masks'].cpu().clone().numpy()
                 tmasks = np.expand_dims(tmasks, axis=3)
-                visualize.display_instances(img, tboxes, tmasks, labels,
+                print(tlabels.shape, tboxes.shape, tmasks.shape)
+                visualize.display_instances(img, tboxes, tmasks, tlabels,
                                             class_names,
                                             is_save=[True, _name])
 
         batch += 1
         model_time = time.time() - model_time
         metric_logger.update(model_time=model_time)
-        if batch > 5:
-            break
+        #if batch > 5:
+        #    break
+    print("IoUDict: {}".format(IoUDict))
+    for cname in Stat_summary.keys():
+        for _iou, _kiou in [(0.5, '0.5'), (0.6, '0.6'), (0.7, '0.7'), (0.8, '0.8'), (0.9, '0.9')]:
+            tp_max = len(IoUDict[cname]['tp'])
+            tp = len([_t for _t in IoUDict[cname]['tp'] if _t > _iou])
+            fp = IoUDict[cname]['fp']
+            fn = IoUDict[cname]['fn'] + (tp_max-tp)
+            precision = float(tp)/float((tp+fp)) if (tp+fp) else 0.0
+            recall = float(tp)/float((tp+fn)) if (tp+fn) else 0.0
+            Stat_summary[cname][_kiou]['tp'] = tp
+            Stat_summary[cname][_kiou]['fp'] = fp
+            Stat_summary[cname][_kiou]['fn'] = fn
+            Stat_summary[cname][_kiou]['precision'] = float("{:.4}".format(precision))
+            Stat_summary[cname][_kiou]['recall'] = float("{:.4}".format(recall))
 
+    print("Stat_summary: {}".format(Stat_summary))
 
 @torch.no_grad()
 def evaluate_image(model, img_path, device,

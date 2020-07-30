@@ -173,6 +173,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         ax.imshow(img)
         plt.show()
 
+    plt.close('all')
+
 # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
 #                             class_names, r['scores'])
 # plt.show()
