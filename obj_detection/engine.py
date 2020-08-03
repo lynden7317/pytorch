@@ -1,6 +1,7 @@
 import sys
 import os
 import math
+import json
 import numpy as np
 import cv2
 import torch
@@ -255,6 +256,8 @@ def evaluate(model, data_loader, device,
             Stat_summary[cname][_kiou]['recall'] = float("{:.4}".format(recall))
 
     print("Stat_summary: {}".format(Stat_summary))
+    with open('evaluation.txt', 'w') as fid:
+        fid.write(json.dumps(Stat_summary))
 
 @torch.no_grad()
 def evaluate_image(model, img_path, device,
