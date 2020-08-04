@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -136,6 +137,48 @@ def genImagePath(isZip, xml_path, root, tifName, name):
         img_path = path_join(imgDir, name)
 
     return img_path
+
+def labelme(fpath, imgs, imgData, page_classes):
+    with open(fpath) as fid:
+        data = json.load(fid)
+        #print(data)
+        _path = data["imagePath"]
+        root = os.path.dirname(fpath)
+        img_path = path_join(root, _path)
+        imgs.append(img_path)
+        dataID = len(imgs) - 1
+        imgData[dataID] = {'frame': {'rotation': "R0", \
+                                     'lefttop_x': "0", \
+                                     'lefttop_y': "0", \
+                                     'width': data["imageWidth"], \
+                                     'height': data["imageHeight"]}, \
+                           'pages': []}
+        shapes = data['shapes']
+        #print(len(shapes), type(shapes))
+        for _s in shapes:
+            pname = _s['label']
+            if pname in page_classes:
+                points = _s['points']
+                ctr = ""
+                Xs, Ys = [], []
+                for _p in points:
+                    Xs.append(int(_p[0]))
+                    Ys.append(int(_p[1]))
+                    _ctr = "("+str(int(_p[0]))+", "+str(int(_p[1]))+")"
+                    ctr += _ctr
+                x1 = min(Xs)
+                y1 = min(Ys)
+                w = max(Xs) - x1
+                h = max(Ys) - y1
+                print(ctr)
+                imgData[dataID]['pages'].append({'name': pname, \
+                                                 'bbox': str(x1)+" "+str(y1)+" "+str(w)+" "+str(h), \
+                                                 'ctr': ctr})
+
+        if len(imgData[dataID]['pages']) == 0:
+            # remove this case
+            imgs.pop()
+
 
 def ITRILabelingPageField(root, xml_path, imgs, imgData,
                           page_classes,
@@ -286,6 +329,7 @@ def ITRILabelingPage(root, xml_path, imgs, imgData,
 class MRCnnXMLDataset(object):
     def __init__(self,
                  root,
+                 labelType='labelme',
                  resize_img=[False, 512, 512],
                  padding=[True, 32],
                  augmentation=None,
@@ -304,10 +348,7 @@ class MRCnnXMLDataset(object):
         :param data_type: 'page' or 'page_field', if 'page_field' should combine with 'page'
             the 'fields' are in the 'page'
         """
-
-        self.datasets = folderParser(root)
-        #print("datasets: {}".format(self.datasets))
-
+        self.labeltype = labelType
         self.page_classes = page_classes
         self.field_classes = field_classes
         self.data_type = data_type
@@ -330,45 +371,69 @@ class MRCnnXMLDataset(object):
 
         self.imgs = []
         self.imgData = {}
+        # self.imgs = [(), (), ...]
+        # self.imgData = {0: {'frame': {'rotation':'R0', 'lefttop_x':'0', 'lefttop_y':'0', 'width':'128',\
+        #                               'height':'128'},
+        #                     'pages':[{'name':'abc', 'bbox':'x1, y1, x2, y2',\
+        #                               'ctr':'(11, 14)(16, 11)(12, 14)(16, 19)'}, {}, ...] }, 1:{}, ...}
 
-        for _i, db in enumerate(self.datasets):
-            print("parsering db:{}".format(db[0]))
-            isZip = True if db[1] == 'zip' else False
-            if isZip:
-                is_pass, _xml_path, _zref = getXMLPath(db[0], isZip=True, returnZref=True)
-                print("  xml_path: {}".format(_xml_path))
-                #is_pass = False
-                if is_pass:
-                    if self.data_type == 'page':
-                        # ["b0090101", "b0070301", "B0080301", "B0070101"]
-                        ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
-                                         page_classes=self.page_classes,
-                                         isZip=[True, _zref])
-                    elif self.data_type == 'page_field':
-                        ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
-                                              page_classes=self.page_classes,
-                                              field_classes=self.field_classes,
-                                              isZip=[True, _zref])
-                    else:
-                        pass
-            else:
-                is_pass, _xml_path = getXMLPath(db[0])
-                print("  xml_path: {}".format(_xml_path))
-                if is_pass:
-                    if self.data_type == 'page':
-                        ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
-                                         self.page_classes,
-                                         isZip=[False])
-                    elif self.data_type == 'page_field':
-                        ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
-                                              page_classes=self.page_classes,
-                                              field_classes=self.field_classes,
-                                              isZip=[False])
-                    else:
-                        pass
+        if self.labeltype == 'labelme':
+            for _root, dirs, files in os.walk(root):
+                if os.name == 'nt':
+                    folder = ntPath(_root)
+                else:
+                    folder = _root
+                for f in files:
+                    if '.json' in f:
+                        fpath = path_join(folder, f)
+                        print("fpath: {}".format(fpath))
+                        labelme(fpath, self.imgs, self.imgData,
+                                page_classes=self.page_classes)
+
+        elif self.labeltype == 'ITRILabel':
+            datasets = folderParser(root)
+            # print("datasets: {}".format(datasets))
+
+            for _i, db in enumerate(datasets):
+                print("parsering db:{}".format(db[0]))
+                isZip = True if db[1] == 'zip' else False
+                if isZip:
+                    is_pass, _xml_path, _zref = getXMLPath(db[0], isZip=True, returnZref=True)
+                    print("  xml_path: {}".format(_xml_path))
+                    #is_pass = False
+                    if is_pass:
+                        if self.data_type == 'page':
+                            # ["b0090101", "b0070301", "B0080301", "B0070101"]
+                            ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
+                                             page_classes=self.page_classes,
+                                             isZip=[True, _zref])
+                        elif self.data_type == 'page_field':
+                            ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
+                                                  page_classes=self.page_classes,
+                                                  field_classes=self.field_classes,
+                                                  isZip=[True, _zref])
+                        else:
+                            pass
+                else:
+                    is_pass, _xml_path = getXMLPath(db[0])
+                    print("  xml_path: {}".format(_xml_path))
+                    if is_pass:
+                        if self.data_type == 'page':
+                            ITRILabelingPage(db[0], _xml_path, self.imgs, self.imgData,
+                                             self.page_classes,
+                                             isZip=[False])
+                        elif self.data_type == 'page_field':
+                            ITRILabelingPageField(db[0], _xml_path, self.imgs, self.imgData,
+                                                  page_classes=self.page_classes,
+                                                  field_classes=self.field_classes,
+                                                  isZip=[False])
+                        else:
+                            pass
+        else:
+            pass
 
         #print(self.imgs)
-        #print(self.imgData)
+        print(self.imgData)
 
     def __getitem__(self, idx):
         # load images ad masks
