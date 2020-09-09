@@ -41,7 +41,8 @@ def features_exam(xdata, ydata, n_components=2, classes_name=[]):
     ax.legend(loc="upper right")
     plt.show()
 
-def imshow(inp, title=None,
+def imshow(img,
+           title=None,
            figsize=(4, 4),
            ax=None,
            is_display=False,
@@ -50,13 +51,16 @@ def imshow(inp, title=None,
     if not ax:
         _, ax = plt.subplots(1, figsize=figsize)
 
-    print(type(inp))
-    inp = inp.byte()
-    inp = inp.numpy().transpose((1, 2, 0))
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    #inp = std * inp + mean
-    #inp = np.clip(inp, 0, 1)
+    if img[0] == 'npy':
+        inp = img[1]
+    elif img[0] == 'torch':
+        print(type(img[1]))
+        inp = img[1].byte()
+        inp = inp.numpy().transpose((1, 2, 0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        #inp = std * inp + mean
+        #inp = np.clip(inp, 0, 1)
 
     # Show area outside image boundaries.
     height, width = inp.shape[:2]
@@ -75,3 +79,5 @@ def imshow(inp, title=None,
     if is_display:
         ax.imshow(inp)
         plt.show()
+
+    plt.close('all')

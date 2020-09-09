@@ -9,7 +9,8 @@ from torchvision.models.detection.rpn import AnchorGenerator
 def MaskRCNN(backbone='default',
              anchors=(32, 64, 128, 256, 512),
              anchor_ratios=(0.5, 1.0, 2.0),
-             num_classes=2):
+             num_classes=2,
+             pretrained=True):
     """
     :param backbone:
     :param anchors:
@@ -20,12 +21,13 @@ def MaskRCNN(backbone='default',
     if backbone == 'default':
         return torchvision.models.detection.maskrcnn_resnet50_fpn(num_classes=num_classes)
         #return torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
-    elif backbone == 'resnet50':
+    elif backbone in ['resnet50', 'resnet101']:
         # anchor_sizes should be ((32,), (64,), (128,), (256,), (512,))
-        backbone = resnet_fpn_backbone(backbone_name=backbone, pretrained=True)
+        # backbone = resnet_fpn_backbone(backbone_name=backbone, pretrained=pretrained)
+        backboneNet = resnet_fpn_backbone(backbone, pretrained=pretrained)
     elif backbone == 'mobilenet_v2':
-        backbone = torchvision.models.mobilenet_v2(pretrained=True).features
-        backbone.out_channels = 1280
+        backboneNet = torchvision.models.mobilenet_v2(pretrained=pretrained).features
+        backboneNet.out_channels = 1280
     else:
         pass
 
@@ -43,7 +45,7 @@ def MaskRCNN(backbone='default',
                                                          output_size=14,
                                                          sampling_ratio=2)
 
-    model = MRCNN(backbone,
+    model = MRCNN(backboneNet,
                   num_classes=num_classes,
                   rpn_anchor_generator=anchor_generator,
                   box_roi_pool=roi_pooler,

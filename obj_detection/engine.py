@@ -24,7 +24,7 @@ def train_one_epoch(model,
                     data_loader,
                     device,
                     epoch,
-                    print_freq):
+                    print_freq=10):
     """
     example:
       # construct an optimizer
@@ -40,13 +40,6 @@ def train_one_epoch(model,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
-
-    lr_scheduler = None
-    if epoch == 0:
-        warmup_factor = 1. / 1000
-        warmup_iters = min(1000, len(data_loader) - 1)
-
-        lr_scheduler = utils.warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
 
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
         images = list(image.to(device) for image in images)
@@ -70,9 +63,6 @@ def train_one_epoch(model,
         optimizer.zero_grad()
         losses.backward()
         optimizer.step()
-
-        if lr_scheduler is not None:
-            lr_scheduler.step()
 
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
@@ -142,6 +132,7 @@ def evaluate(model, data_loader, device,
              class_names=[],
              score_threshold=0.7,
              is_plot=False,
+             dump2LabelMe=False,
              plot_folder='./plotEval'):
     if is_plot:
         if not os.path.isdir(plot_folder):
@@ -280,6 +271,10 @@ def evaluate_image(model, img_path, device,
 
     img = cv2.imread(img_path)
     img_org = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    #img_org = img_utils.gray_3_ch(img)
+    #img_org = img_org.astype(np.uint8)
+
     img_pad_shape = img_org.shape
     img_tensor = img_org
 
@@ -318,12 +313,12 @@ def evaluate_image(model, img_path, device,
     _scores = output['scores'].cpu().clone().numpy()
     _masks = output['masks'].cpu().clone().numpy()
     _masks = _masks.transpose((0, 2, 3, 1))    # (N, C, H, W) --> (N, H, W, C)
-    print(_masks.shape)
+    print("_masks.shape: ", _masks.shape)
 
     if resize_img[0]:
         # Translate normalized coordinates in the resized image to pixel
         # coordinates in the original image before resizing
-        print(_boxes, "window", resize_window)
+        #print(_boxes, "window", resize_window)
         wx1, wy1, wx2, wy2 = resize_window
         shift = np.array([wx1, wy1, wx1, wy1])
         wh = wy2 - wy1  # window height
@@ -333,14 +328,14 @@ def evaluate_image(model, img_path, device,
         _boxes = np.divide(_boxes-shift, _scale)
         # Convert boxes to pixel coordinates on the original image
         _boxes = img_utils.denorm_boxes(_boxes, img_pad_shape[:2])
-        print(_boxes, img_pad.shape)
+        #print(_boxes, img_pad.shape)
         full_masks = np.zeros((_masks.shape[0], img_pad_shape[0], img_pad_shape[1], 1))
         for _m in range(_masks.shape[0]):
             full_mask = img_utils.denorm_mask(_masks[_m, :, :, 0], resize_scale, resize_padding, img_pad_shape[:2])
             full_mask = np.expand_dims(full_mask, axis=2)
             full_masks[_m, :, :, :] = full_mask
         _masks = full_masks
-    print(_boxes.shape, _labels.shape, _scores.shape, _masks.shape)
+    #print(_boxes.shape, _labels.shape, _scores.shape, _masks.shape)
     #sys.exit(1)
 
     # ==== update results by score_threshold ==== #
@@ -350,8 +345,8 @@ def evaluate_image(model, img_path, device,
     scores = _scores[scores_pass]
     #masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
     masks = _masks[scores_pass]
-    print(type(boxes), type(labels), type(scores), type(masks))
-    print(boxes.shape, labels.shape, scores.shape, masks.shape)
+    #print(type(boxes), type(labels), type(scores), type(masks))
+    #print(boxes.shape, labels.shape, scores.shape, masks.shape)
     result = {"boxes": boxes, "labels": labels, "scores": scores, "masks": masks, "class_names": class_names}
 
     model_time = time.time() - model_time
@@ -369,7 +364,7 @@ def evaluate_image(model, img_path, device,
         _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
         visualize.display_instances(img, boxes, masks, labels,
                                     class_names,
-                                    is_display=True,
+                                    is_display=False,
                                     is_save=[True, _name])
 
     return result

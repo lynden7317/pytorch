@@ -3,6 +3,7 @@ import errno
 import time
 import copy
 import cv2
+import re
 import torch
 import numpy as np
 
@@ -10,6 +11,15 @@ import torch.nn as nn
 import torchvision
 
 from classification import visualize
+
+NAME_SPLIT_FUNC = lambda x:(re.compile(r'[a-zA-Z ]+')).findall(x)[0]
+
+def mkdir(path):
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
 def img2torch(img_path, transforms=None, height=224, width=224):
     img = cv2.imread(img_path)
@@ -45,21 +55,34 @@ def evaluate_image(model, device,
     model.eval()
 
     img = img2torch(img_path, transforms, height, width)
+    img_org = cv2.imread(img_path)
+    img_org = cv2.cvtColor(img_org, cv2.COLOR_BGR2RGB)
 
     input = img.to(device)
     output = model(input)
     _, pred = torch.max(output, 1)
 
+    imgName = os.path.basename(img_path)
+    true_lab = NAME_SPLIT_FUNC(imgName)
+    if classes_name[pred[0]] == true_lab:
+        #print("{}, lab:{}, pred:{}".format(imgName, true_lab, classes_name[pred[0]]))
+        is_save = True
+    else:
+        print("{}, lab:{}, pred:{}".format(imgName, true_lab, classes_name[pred[0]]))
+        is_save = False
+
     if is_plot:
         if is_save:
             _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=True, is_save=[True, _name])
+            visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=True, is_save=[True, _name])
         else:
-            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=True)
+            visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=True)
     else:
         if is_save:
-            _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            visualize.imshow(input.cpu().data[0], title=classes_name[pred[0]], is_display=False, is_save=[True, _name])
+            #_name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
+            #visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=False, is_save=[True, _name])
+            _name = os.path.join(plot_folder, imgName)
+            cv2.imwrite(_name, img_org)
 
     model.train(mode=was_training)
 
@@ -223,13 +246,20 @@ def feature2classifier(fmodel,
     return results
 
 
-def train_model(model, device,
+def train_model(device,
+                model,
                 criterion,
                 optimizer,
                 scheduler,
                 dataloaders,
                 dataset_sizes,
+                outputfolder="./cls_training",
+                phases=['train', 'val'],
                 num_epochs=25):
+
+    if not os.path.isdir(outputfolder):
+        mkdir(outputfolder)
+
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -240,7 +270,7 @@ def train_model(model, device,
         print('-' * 10)
 
         # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
+        for phase in phases:
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
@@ -286,16 +316,22 @@ def train_model(model, device,
                 phase, epoch_loss, epoch_acc))
 
             # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
+            #if phase == 'val' and epoch_acc > best_acc:
+            if epoch_acc > best_acc:
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
 
-        print()
+        if (epoch+1)%10 == 0:
+            print("Auto Saved Model")
+            savedName = model.name + "_" + str(epoch+1) + ".pth"
+            torch.save(model.state_dict(), os.path.join(outputfolder, savedName))
+
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
-    torch.save(best_model_wts, "best_model_wts")
+    savedName = "best_" + model.name + ".pth"
+    torch.save(best_model_wts, os.path.join(outputfolder, savedName))
 
     # load best model weights
     model.load_state_dict(best_model_wts)

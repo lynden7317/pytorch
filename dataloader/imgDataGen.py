@@ -1,4 +1,6 @@
+import sys
 import os
+import re
 import torch
 import numpy as np
 
@@ -17,6 +19,8 @@ import matplotlib.pyplot as plt
 np.set_printoptions(threshold=np.inf)
 torch.set_printoptions(profile="full")
 
+NAME_SPLIT_FUNC = lambda x:(re.compile(r'[a-zA-Z ]+')).findall(x)[0]
+
 def imshow(inp, title=None):
     """Imshow for Tensor."""
     inp = inp.byte()
@@ -31,6 +35,25 @@ def imshow(inp, title=None):
         plt.title(title)
     #plt.pause(1.0)  # pause a bit so that plots are updated
     plt.show()
+
+def getImgName(img_path):
+    if os.name == 'nt':
+        img_name = img_path.split("\\")[-1]
+    else:
+        img_name = img_path.split(os.path.sep)[-1]
+    return img_name
+
+
+def genClasses(root, func=NAME_SPLIT_FUNC):
+    classes = set()
+    datalist = list(paths.list_images(root))
+    for dpath in datalist:
+        imgName = getImgName(dpath)
+        className = func(imgName)
+        classes.add(className)
+
+    return sorted(list(classes))
+
 
 class SequentialSampler(Sampler):
     """Samples elements sequentially, always in the same order.
@@ -162,22 +185,25 @@ class MyCustomDataset(Dataset):
         if self.is_resize:
             img, window, scale, resize_padding, crop = img_utils.resize_image(img, min_dim=self.min_dim,
                                                                               max_dim=self.max_dim)
-
+        img = img.astype(np.uint8)
         if self.augmentation:
             img, det = img_utils.img_augmentation(img, self.augmentation)
-            print("data augmentation: {}".format(det))
+            #print("data augmentation: {}".format(det))
 
         #print(type(img))
-        img_name = self.__img_name(imgpath)
+        img_name = getImgName(imgpath)
 
-        lab_str = img_name.split("_")[0]
+        #lab_str = img_name.split("_")[0]
+        #label = self.classIDs[lab_str]
+        #label = "D"
+        lab_str = NAME_SPLIT_FUNC(img_name)
         label = self.classIDs[lab_str]
 
         if self.pil:
             #img = torchvision.transforms.ToPILImage()(img)
             if self.transforms is not None:
-                img = self.transforms(img)
-            img = torchvision.transforms.ToTensor()(img)
+                img = self.transforms(img.copy())
+            #img = torchvision.transforms.ToTensor()(img)
 
         if self.npy:
             img = img.transpose((2, 0, 1))    # numpy as (H, W, C) to pytorch as (C, H, W)
@@ -189,13 +215,6 @@ class MyCustomDataset(Dataset):
     def __len__(self):
         # of how many examples(images?) you have
         return len(self.datalist)
-
-    def __img_name(self, img_path):
-        if os.name == 'nt':
-            img_name = img_path.split("\\")[-1]
-        else:
-            img_name = img_path.split(os.path.sep)[-1]
-        return img_name
 
 if __name__ == '__main__':
     from torch.utils.data import DataLoader

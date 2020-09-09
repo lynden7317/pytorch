@@ -61,22 +61,27 @@ def denorm_boxes(boxes, shape):
     return np.around(np.multiply(boxes, scale) + shift).astype(np.int32)
 
 def denorm_mask(mask, scale, padding, outshape):
-    print(padding)
+    #print("padding: {}, outshape:{}".format(padding, outshape))
     # remove padding
-    x_pad = padding[0][0]+padding[0][1]
-    y_pad = padding[1][0]+padding[1][1]
-    unpad_mask = np.zeros((mask.shape[0]-x_pad, mask.shape[1]-y_pad))
+    #x_pad = padding[0][0]+padding[0][1]
+    #y_pad = padding[1][0]+padding[1][1]
+    #unpad_mask = np.zeros((mask.shape[0]-x_pad, mask.shape[1]-y_pad))
     unpad_mask = mask[0+padding[0][0]:mask.shape[0]-padding[0][1], 0+padding[1][0]:mask.shape[1]-padding[1][1]]
-    print(unpad_mask.shape)
+    #print(unpad_mask.shape)
     # Suppress warning from scipy 0.13.0, the output shape of zoom() is
     # calculated with round() instead of int()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         de_mask = scipy.ndimage.zoom(unpad_mask, zoom=[1/scale, 1/scale], order=0)
     # confirm to the real output size
+    #print("de_mask shape: {}".format(de_mask.shape))
+    shape_0 = outshape[0] if de_mask.shape[0] > outshape[0] else de_mask.shape[0]
+    shape_1 = outshape[1] if de_mask.shape[1] > outshape[1] else de_mask.shape[1]
+
     out = np.zeros((outshape[0], outshape[1]))
-    out[0:de_mask.shape[0], 0:de_mask.shape[1]] = de_mask
-    print(out.shape)
+    #out[0:de_mask.shape[0], 0:de_mask.shape[1]] = de_mask
+    out[0:shape_0, 0:shape_1] = de_mask[0:shape_0, 0:shape_1]
+    #print(out.shape)
     return out
 
 def moldImage_resnet(img):

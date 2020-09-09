@@ -2,6 +2,7 @@ import os
 import random
 import colorsys
 import numpy as np
+import cv2
 
 from skimage.measure import find_contours
 
