@@ -1,4 +1,20 @@
+import os
 import webcolors
+import argparse
+
+def nt_path(root):
+    nts = [p for p in root.split('\\')]
+    path = nts[0]
+    for p in nts[1:]:
+        path = path + '/' + p
+    return path
+
+def path_join(p1, p2):
+    if os.name == 'nt':
+        path = p1 + '/' + p2
+    else:
+        path = os.path.join(p1, p2)
+    return path
 
 def closest_colour(requested_colour):
     min_colours = {}
@@ -11,13 +27,37 @@ def closest_colour(requested_colour):
     #print(min_colours)
     return min_colours[min(min_colours.keys())]
 
-def get_colour_name(requested_colour):
-    try:
-        closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
-    except ValueError:
-        closest_name = closest_colour(requested_colour)
-        actual_name = None
-    return actual_name, closest_name
+def parse_commands():
+    # Root directory of the project
+    ROOT_DIR = os.getcwd()
+
+    # default log folder
+    MODEL_DIR = os.path.join(ROOT_DIR, "log")
+    # default case folder
+    CASE_DIR = os.path.join(ROOT_DIR, "case")
+
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Cathay Car Damage Detection.')
+
+    parser.add_argument("--case_path", required=False,
+                        default=CASE_DIR,
+                        metavar="/path/to/case/",
+                        help="'train' or 'evaluate' on MS COCO")
+
+    parser.add_argument('--log_path', required=False,
+                        default=MODEL_DIR,
+                        metavar="/path/to/logs/",
+                        help='Logs and checkpoints directory (default=logs/)')
+
+    parser.add_argument('--plot_on', required=False,
+                        default=False,
+                        metavar="<True|False>",
+                        help="open plot image function")
+
+    args = parser.parse_args()
+
+    return args
 
 
 #requested_colour = (122, 105, 94)
