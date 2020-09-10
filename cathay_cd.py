@@ -23,11 +23,121 @@ from distutils.version import LooseVersion
 
 logging.basicConfig(level=logging.DEBUG)
 
+
+def gray_3_ch(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _timg = np.zeros((gray.shape[0], gray.shape[1], 3))
+    _timg[:, :, 0] = gray
+    _timg[:, :, 1] = gray
+    _timg[:, :, 2] = gray
+    return _timg
+
+
+def resize_image(img, min_dim=None, max_dim=None, min_scale=None, mode="square"):
+    # Keep track of image dtype and return results in the same dtype
+    image_dtype = img.dtype
+    logging.debug("<resize_image> dtype:{}".format(image_dtype))
+    # Default window (x1, y1, x2, y2) and default scale == 1.
+    h, w = img.shape[:2]
+    if w <= 0:
+        print('Error:resize_image:w<=0')
+        raise ValueError('Error:resize_image:w<=0')
+
+    if h <= 0:
+        print('Error:resize_image:h<=0')
+        raise ValueError('Error:resize_image:h<=0')
+
+    window = (0, 0, w, h)
+    scale = 1
+    padding = [(0, 0), (0, 0), (0, 0)]
+
+    if mode == "none":
+        return img, window, scale, padding
+
+    # Scale?
+    if min_dim:
+        # Scale up but not down
+        scale = max(1, min_dim / min(h, w))
+    if min_scale and scale < min_scale:
+        scale = min_scale
+
+    # Does it exceed max dim?
+    if max_dim and mode == "square":
+        image_max = max(h, w)
+        if round(image_max * scale) > max_dim:
+            scale = max_dim / image_max
+
+    # Resize image using bilinear interpolation
+    if scale != 1:
+        img = resize(img, (round(h * scale), round(w * scale)), preserve_range=True)
+        # image = skimage.transform.resize(image, (round(h * scale), round(w * scale)),
+        #        order=1, mode="constant", preserve_range=True)
+
+    # Need padding or cropping?
+    if mode == "square":
+        # Get new height and width
+        h, w = img.shape[:2]
+        top_pad = (max_dim - h) // 2
+        bottom_pad = max_dim - h - top_pad
+        left_pad = (max_dim - w) // 2
+        right_pad = max_dim - w - left_pad
+        padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
+        img = np.pad(img, padding, mode='constant', constant_values=0)
+        window = (left_pad, top_pad, w + left_pad, h + top_pad)
+    else:
+        raise Exception("Mode {} not supported".format(mode))
+
+    return img.astype(image_dtype), window, scale, padding
+
+
+def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True,
+            preserve_range=False, anti_aliasing=False, anti_aliasing_sigma=None):
+    if LooseVersion(skimage.__version__) >= LooseVersion("0.14"):
+        # New in 0.14: anti_aliasing. Default it to False for backward
+        # compatibility with skimage 0.13.
+        return skimage.transform.resize(
+            image, output_shape,
+            order=order, mode=mode, cval=cval, clip=clip,
+            preserve_range=preserve_range, anti_aliasing=anti_aliasing,
+            anti_aliasing_sigma=anti_aliasing_sigma)
+    else:
+        return skimage.transform.resize(
+            image, output_shape,
+            order=order, mode=mode, cval=cval, clip=clip,
+            preserve_range=preserve_range)
+
+
 class ImgSet(object):
-    def __init__(self, imgs):
+    def __init__(self, imgs,
+                 resize_img=[False, 224, 224],
+                 padding=[True, 32],
+                 transforms=None):
         self.imgs = imgs
+        self.is_resize = resize_img[0]
+        self.is_padding = padding[0]
+        self.min_dim = resize_img[1]
+        self.max_dim = resize_img[2]
+        self.padding = padding[1]
+        self.transforms = transforms
+
     def __getitem__(self, idx):
-        pass
+        img = self.imgs[idx].copy()
+        img = img.astype(np.uint8)
+
+        if self.is_padding:
+            padding = [(self.padding, self.padding), (self.padding, self.padding), (0, 0)]
+            img_p = np.pad(img, padding, mode='constant', constant_values=0)
+
+        if self.is_resize:
+            img_p_r, window, scale, resize_padding = resize_image(img_p,
+                                                                  min_dim=self.min_dim,
+                                                                  max_dim=self.max_dim)
+
+        if self.transforms is not None:
+            img_torch = self.transforms(img_p_r.copy())
+
+        return img_torch
+
     def __len__(self):
         return len(self.imgs)
 
@@ -50,7 +160,7 @@ class ObjSet(object):
         pimg = self.imgs[idx]
         img = cv2.imread(pimg)
         if img.shape[2] != 3:
-            img_org = self._gray_3_ch(img)
+            img_org = gray_3_ch(img)
         else:
             img_org = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_org = img_org.astype(np.uint8)
@@ -60,9 +170,9 @@ class ObjSet(object):
             img_p = np.pad(img_org, padding, mode='constant', constant_values=0)
 
         if self.is_resize:
-            img_p_r, window, scale, resize_padding = self._resize_image(img_p,
-                                                                        min_dim=self.min_dim,
-                                                                        max_dim=self.max_dim)
+            img_p_r, window, scale, resize_padding = resize_image(img_p,
+                                                                  min_dim=self.min_dim,
+                                                                  max_dim=self.max_dim)
 
         if self.transforms is not None:
             img_torch = self.transforms(img_p_r.copy())
@@ -76,86 +186,6 @@ class ObjSet(object):
 
     def __len__(self):
         return len(self.imgs)
-
-    def _gray_3_ch(self, img):
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _timg = np.zeros((gray.shape[0], gray.shape[1], 3))
-        _timg[:, :, 0] = gray
-        _timg[:, :, 1] = gray
-        _timg[:, :, 2] = gray
-        return _timg
-
-    def _resize_image(self, img, min_dim=None, max_dim=None, min_scale=None, mode="square"):
-        # Keep track of image dtype and return results in the same dtype
-        image_dtype = img.dtype
-        logging.debug("<resize_image> dtype:{}".format(image_dtype))
-        # Default window (x1, y1, x2, y2) and default scale == 1.
-        h, w = img.shape[:2]
-        if w <= 0:
-            print('Error:resize_image:w<=0')
-            raise ValueError('Error:resize_image:w<=0')
-
-        if h <= 0:
-            print('Error:resize_image:h<=0')
-            raise ValueError('Error:resize_image:h<=0')
-
-        window = (0, 0, w, h)
-        scale = 1
-        padding = [(0, 0), (0, 0), (0, 0)]
-
-        if mode == "none":
-            return img, window, scale, padding
-
-        # Scale?
-        if min_dim:
-            # Scale up but not down
-            scale = max(1, min_dim / min(h, w))
-        if min_scale and scale < min_scale:
-            scale = min_scale
-
-        # Does it exceed max dim?
-        if max_dim and mode == "square":
-            image_max = max(h, w)
-            if round(image_max * scale) > max_dim:
-                scale = max_dim / image_max
-
-        # Resize image using bilinear interpolation
-        if scale != 1:
-            img = self._resize(img, (round(h * scale), round(w * scale)), preserve_range=True)
-            # image = skimage.transform.resize(image, (round(h * scale), round(w * scale)),
-            #        order=1, mode="constant", preserve_range=True)
-
-        # Need padding or cropping?
-        if mode == "square":
-            # Get new height and width
-            h, w = img.shape[:2]
-            top_pad = (max_dim - h) // 2
-            bottom_pad = max_dim - h - top_pad
-            left_pad = (max_dim - w) // 2
-            right_pad = max_dim - w - left_pad
-            padding = [(top_pad, bottom_pad), (left_pad, right_pad), (0, 0)]
-            img = np.pad(img, padding, mode='constant', constant_values=0)
-            window = (left_pad, top_pad, w + left_pad, h + top_pad)
-        else:
-            raise Exception("Mode {} not supported".format(mode))
-
-        return img.astype(image_dtype), window, scale, padding
-
-    def _resize(self, image, output_shape, order=1, mode='constant', cval=0, clip=True,
-               preserve_range=False, anti_aliasing=False, anti_aliasing_sigma=None):
-        if LooseVersion(skimage.__version__) >= LooseVersion("0.14"):
-            # New in 0.14: anti_aliasing. Default it to False for backward
-            # compatibility with skimage 0.13.
-            return skimage.transform.resize(
-                image, output_shape,
-                order=order, mode=mode, cval=cval, clip=clip,
-                preserve_range=preserve_range, anti_aliasing=anti_aliasing,
-                anti_aliasing_sigma=anti_aliasing_sigma)
-        else:
-            return skimage.transform.resize(
-                image, output_shape,
-                order=order, mode=mode, cval=cval, clip=clip,
-                preserve_range=preserve_range)
 
 
 def args_check(args):
