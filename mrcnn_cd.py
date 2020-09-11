@@ -208,7 +208,7 @@ def app_color():
                 sample = random.sample(range(pos[0].shape[0]), 300)
                 colors = {}
                 for p in sample:
-                    c = (img[pos[0][p], pos[1][p], 0], img[pos[0][p], pos[1][p], 0], img[pos[0][p], pos[1][p], 0])
+                    c = (img[pos[0][p], pos[1][p], 0], img[pos[0][p], pos[1][p], 1], img[pos[0][p], pos[1][p], 2])
                     cname = cathay_utils.closest_colour(c)
                     if cname in colors.keys():
                         colors[cname] += 1
