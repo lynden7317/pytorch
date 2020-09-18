@@ -26,7 +26,7 @@ from classification import models
 
 from distutils.version import LooseVersion
 
-logging.basicConfig(level=logging.INFO)  # logging.DEBUG
+logging.basicConfig(level=logging.DEBUG)  # logging.DEBUG
 
 IMGDICT = {}
 
@@ -204,6 +204,26 @@ def args_check(args):
 
 def smoothing(masks):
     # masks smoothing
+    print(masks.shape)
+    for m in range(masks.shape[0]):
+        img_mask = np.zeros((masks.shape[1],masks.shape[2]))
+        img_mask[:,:] = masks[m,:,:,0]*255
+        img_mask = img_mask.astype(np.uint8)
+        #img_mask = cv2.blur(img_mask, (5, 5))
+        cnts, hier = cv2.findContours(img_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        print(len(cnts))
+        for c in cnts:
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.01*peri, True)
+            img_mask = cv2.drawContours(img_mask, [approx], -1, (255,255,255), -1)
+            print(peri, len(approx))
+
+        masks[m,:,:,0] = img_mask/255
+        #cv2.imwrite("tt_b_m.jpg", img_mask)
+
+    #sys.exit(1)
+
+def seg_merge(labs, boxes, scores, masks):
     pass
 
 def seg_criterion(tar, thresholds):
@@ -228,7 +248,8 @@ def seg_criterion(tar, thresholds):
     labels = labels[nms_result]
     scores = scores[nms_result]
     masks = masks[nms_result,:,:,:]
-    smoothing(masks)
+
+    #seg_merge(labels, boxes, scores, masks)
 
     return {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks}
 
@@ -447,6 +468,8 @@ def car_segmentation(cases, folder):
             if car_damage_dict is not None:
                 for _k in car_damage_dict.keys():
                     car_return_dict[_k] += car_damage_dict[_k]
+
+            sys.exit(1)
 
     #logging.debug("case seg. results:{}".format(class_dict))
     return car_return_dict
