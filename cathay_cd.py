@@ -29,6 +29,7 @@ from distutils.version import LooseVersion
 logging.basicConfig(level=logging.DEBUG)  # logging.DEBUG
 
 IMGDICT = {}
+NP_WHERE_MASK = 0.5
 
 def gray_3_ch(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -202,29 +203,74 @@ def args_check(args):
             except:
                 logging.error("cannot create folder at path:{}".format(d))
 
-def smoothing(masks):
+def smoothing(mask, path):
+    # parameters
+    blur_kernel = (7, 7)
+    epsilon = 0.01
     # masks smoothing
-    print(masks.shape)
-    for m in range(masks.shape[0]):
-        img_mask = np.zeros((masks.shape[1],masks.shape[2]))
-        img_mask[:,:] = masks[m,:,:,0]*255
-        img_mask = img_mask.astype(np.uint8)
-        #img_mask = cv2.blur(img_mask, (5, 5))
-        cnts, hier = cv2.findContours(img_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    logging.debug("<mask smoothing> shape: {}".format(mask.shape))
+    print(len(np.where(mask > NP_WHERE_MASK)[0]), len(np.where(mask > 0)[0]))
+    org_mask = np.zeros((mask.shape[0],mask.shape[1]))
+    smooth_mask = np.zeros((mask.shape[0],mask.shape[1]))
+    cols, rows = np.where(mask > NP_WHERE_MASK)
+    print("before:{}".format(len(cols)))
+    org_mask[cols, rows] = 255
+    org_mask = cv2.blur(org_mask, blur_kernel)
+    org_mask = org_mask.astype(np.uint8)
+    try:
+        cnts, hier = cv2.findContours(org_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         print(len(cnts))
+        # filter the max cnt
+        max_cnts = None
+        max_peri = 0
         for c in cnts:
             peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.01*peri, True)
-            img_mask = cv2.drawContours(img_mask, [approx], -1, (255,255,255), -1)
-            print(peri, len(approx))
+            if peri > max_peri:
+                max_peri = peri
+                max_cnts = c
+        approx = cv2.approxPolyDP(max_cnts, epsilon*max_peri, True)
+        cv2.drawContours(smooth_mask, [approx], -1, (255), -1)
+        #smooth_mask = smooth_mask/255
+        cols, rows = np.where(smooth_mask > 1)
+        x1, y1 = rows.min()-1, cols.min()-1
+        x2, y2 = rows.max()+1, cols.max()+1
+        w, h = x2-x1, y2-y1
+        print("after:{}".format(len(cols)))
+        print(len(np.where(smooth_mask>0)[0]))
+        cv2.imwrite(path, smooth_mask)
+        #sys.exit(1)
+        return True, (x1,y1,w,h,cols,rows)
+    except:
+        logging.warning("<Warning smoothing> cannot do the smoothing!")
+        return False, (-1,-1,-1,-1,[],[])
 
-        masks[m,:,:,0] = img_mask/255
-        #cv2.imwrite("tt_b_m.jpg", img_mask)
+    #for c in cnts:
+    #    peri = cv2.arcLength(c, True)
+    #    approx = cv2.approxPolyDP(c, epsilon*peri, True)
+    #    smooth_mask = cv2.drawContours(smooth_mask, [approx], -1, (255, 255, 255), -1)
 
-    #sys.exit(1)
-
-def seg_merge(labs, boxes, scores, masks):
-    pass
+def seg_merge(results):
+    _ll = list(set(results["labels"]))
+    diffs = len(_ll)
+    merge_boxes = np.zeros((diffs, 4))
+    merge_scores = np.zeros(diffs)
+    merge_masks = np.zeros((diffs, results["masks"].shape[1],
+                            results["masks"].shape[2], results["masks"].shape[3]))
+    print(results["labels"], diffs, results["boxes"].shape, results["scores"].shape, results["masks"].shape)
+    try:
+        for i, v in enumerate(results["labels"]):
+            idx = _ll.index(v)
+            merge_masks[idx] = merge_masks[idx] + results["masks"][i]
+        for i in range(merge_masks.shape[0]):
+            cols, rows = np.where(merge_masks[i,:,:,0] > NP_WHERE_MASK)
+            x1, y1 = rows.min(), cols.min()
+            x2, y2 = rows.max(), cols.max()
+            merge_boxes[i] = np.array([x1,y1,x2,y2])
+            merge_scores[i] = -1
+        return {"boxes": merge_boxes, "labels": _ll, "scores": merge_scores, "masks": merge_masks}
+    except:
+        logging.warning("<Warning seg_merge> cannot merge the segmentations!")
+        return results
 
 def seg_criterion(tar, thresholds):
     _boxes = tar['boxes'].cpu().clone().numpy()
@@ -249,15 +295,15 @@ def seg_criterion(tar, thresholds):
     scores = scores[nms_result]
     masks = masks[nms_result,:,:,:]
 
-    #seg_merge(labels, boxes, scores, masks)
-
     return {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks}
 
 def major_car(cls_dict):
     # determine the major car segmentations
     pass
 
-def mask_decode(image, result, classes, outputfolder, tag='c'):
+def mask_decode(image, result, classes, outputfolder,
+                tag='c',
+                is_smooth=False):
     cls_dict = {}
     cls_list = [[] for c in classes]
     path = result["path"]
@@ -286,7 +332,7 @@ def mask_decode(image, result, classes, outputfolder, tag='c'):
 
         if tag == 'd':
             # damage area criteria
-            pos = np.where(masks[_m,:,:] > 0.5)
+            pos = np.where(masks[_m,:,:] > NP_WHERE_MASK)
             logging.debug("damage pixels:{}, class:{}".format(pos[0].shape[0], classes[lab]))
             if pos[0].shape[0] < 4000 and classes[lab] in ['DS', 'DD', 'DC', 'DW']:
                 # the damage region is too small
@@ -302,13 +348,22 @@ def mask_decode(image, result, classes, outputfolder, tag='c'):
         if logging.getLogger().level == logging.DEBUG:
             mask_img = np.zeros(img_bgr.shape)
             for c in range(3):
-                all_mask_img[:,:,c] = np.where(masks[_m,:,:]>0.5, img_bgr[:,:,c], all_mask_img[:,:,c])
-                mask_img[:,:,c] = np.where(masks[_m,:,:]>0.5, img_bgr[:,:,c], 0)
+                all_mask_img[:,:,c] = np.where(masks[_m,:,:] > NP_WHERE_MASK, img_bgr[:,:,c], all_mask_img[:,:,c])
+                mask_img[:,:,c] = np.where(masks[_m,:,:] > NP_WHERE_MASK, img_bgr[:,:,c], 0)
 
             mask_img = mask_img[y1:y1+h,x1:x1+w,:]
             cv2.imwrite(path, mask_img)
 
-        cols, rows = np.where(masks[_m,:,:] > 0.5)
+        _name = img_name + "_" + tag + "_" + str(lab) + "_" + str(len(cls_list[lab])) + "_s.jpg"
+        path = os.path.join(outputfolder, _name)
+
+        if is_smooth:
+            flag, updated = smoothing(masks[_m,:,:], path)
+            if flag:
+                x1, y1, w, h, cols, rows = updated
+        else:
+            cols, rows = np.where(masks[_m,:,:] > NP_WHERE_MASK)
+
         cls_list[lab].append((path_org, path, (x1,y1), (w,h), (cols,rows)))
 
     #logging.debug("predict list:{}".format(cls_list))
@@ -378,11 +433,11 @@ def merge_car_damage_segs(cars, damages, outputfolder):
                         iou = np.sum(np.sum(iou_pos, axis=0), axis=0)
                         logging.debug("  intersect iou:{}".format(iou))
                         if iou > 0:
-                            cd_cols, cd_rows = np.where(iou_pos>0.5)
+                            cd_cols, cd_rows = np.where(iou_pos > NP_WHERE_MASK)
                             c_pos = c_pos - iou_pos
                             loc_damages[_d] = (cd_cols, cd_rows)
 
-                c_cols, c_rows = np.where(c_pos>0.5)
+                c_cols, c_rows = np.where(c_pos > NP_WHERE_MASK)
                 cls_dict[_c].append((_cc[0], _cc[1], _cc[2], _cc[3], (c_cols, c_rows), loc_damages))
 
                 if logging.getLogger().level == logging.DEBUG:
@@ -390,10 +445,9 @@ def merge_car_damage_segs(cars, damages, outputfolder):
                     updated_car_mask = np.zeros(org_shape)
                     updated_name = os.path.basename(_cc[1]).split(".")[0]
                     for c in range(3):
-                        updated_car_mask[:, :, c] = np.where(c_pos>0.5, img_bgr[:, :, c], 0)
+                        updated_car_mask[:, :, c] = np.where(c_pos > NP_WHERE_MASK, img_bgr[:, :, c], 0)
                     _name = updated_name + "_u.jpg"
                     cv2.imwrite(os.path.join(outputfolder, _name), updated_car_mask)
-
 
     return cls_dict
 
@@ -452,13 +506,15 @@ def car_segmentation(cases, folder):
 
             if len(d['labels']) > 0:
                 d_results = seg_criterion(d, {'score':DAMAGE_SCORETHRESHOLD, 'nms':DAMAGE_NMSTHRESHOLD})
+                d_results = seg_merge(d_results)
                 d_results.update({"path": img_path})
                 damage_mask_dict = mask_decode(images[_i], d_results, damage_class_names, TMPFOLDER, tag='d')
 
             if len(c['labels']) > 0:
                 c_results = seg_criterion(c, {'score':CAR_SCORETHRESHOLD, 'nms':CAR_NMSTHRESHOLD})
                 c_results.update({"path": img_path})
-                car_mask_dict = mask_decode(images[_i], c_results, car_class_names, TMPFOLDER, tag='c')
+                car_mask_dict = mask_decode(images[_i], c_results, car_class_names, TMPFOLDER,
+                                            tag='c', is_smooth=True)
                 major_car(car_mask_dict)
 
             if car_mask_dict is not None and damage_mask_dict is not None:
@@ -469,9 +525,8 @@ def car_segmentation(cases, folder):
                 for _k in car_damage_dict.keys():
                     car_return_dict[_k] += car_damage_dict[_k]
 
-            sys.exit(1)
-
     #logging.debug("case seg. results:{}".format(class_dict))
+    #sys.exit(1)
     return car_return_dict
 
 def case_division(seg_dict):
@@ -579,7 +634,7 @@ def logo_detection(case_list):
         logging.debug("logo image shape:{}".format(logo_img_rgb.shape))
         cases.append(logo_img_rgb)
 
-    logging.debug("<logo detection> cases:{}".format(cases))
+    logging.debug("<logo detection> #cases:{}".format(len(cases)))
     transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
     imgset = ImgSet(cases,
                     resize_img=[True, DIM, DIM],
@@ -614,10 +669,32 @@ def logo_detection(case_list):
     logging.info("<logo detection> predicted logo: {}".format(max_pred_logo))
     return max_pred_logo
 
-def summary(seg_dict, logo, color, outputfolder):
+def summary(seg_dict, logo, color, outputfolder, is_plot=False):
+    def mask2poly(pos):
+        cnts, hier = cv2.findContours(pos, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(cnts) > 1:
+            points = []
+            for c in cnts:
+                _cnt = []
+                peri = cv2.arcLength(c, True)
+                approx = cv2.approxPolyDP(c, 0.01 * peri, True)
+                for p in range(approx.shape[0]):
+                    _cnt.append([int(approx[p][0][0]), int(approx[p][0][1])])
+                points.append(_cnt)
+        elif len(cnts) == 1:
+            points = []
+            peri = cv2.arcLength(cnts[0], True)
+            approx = cv2.approxPolyDP(cnts[0], 0.01 * peri, True)
+            for p in range(approx.shape[0]):
+                points.append([int(approx[p][0][0]), int(approx[p][0][1])])
+        else:
+            points = []
+
+        return points
+
     name = "summary.json"
     path = os.path.join(outputfolder, name)
-    data = {"images":len(IMGDICT), "logo":logo, "color":color, "cars":[]}
+    data = {"images":len(IMGDICT), "folder": outputfolder, "logo":logo, "color":color, "cars":[]}
     for seg in seg_dict.keys():
         if seg in ['BG']:
             continue
@@ -625,15 +702,88 @@ def summary(seg_dict, logo, color, outputfolder):
         for _c in seg_dict[seg]:
             part = {"label": seg, "image_path":_c[0], "points": [], "damages": []}
             if len(_c) < 6:
-                pass
+                org_shape = IMGDICT[_c[0]].shape
+                c_cols, c_rows = _c[4]
+                c_pos = np.zeros((org_shape[0], org_shape[1]))
+                c_pos[c_cols, c_rows] = 255
+                c_pos = c_pos.astype(np.uint8)
+                points = mask2poly(c_pos)
+                part["points"] = points
+
             else:              # including damages
-                pass
+                org_shape = IMGDICT[_c[0]].shape
+                c_cols, c_rows = _c[4]
+                c_pos = np.zeros((org_shape[0], org_shape[1]))
+                c_pos[c_cols, c_rows] = 255
+                #print(_c[5])
+                for d in _c[5].keys():
+                    d_pos = np.zeros((org_shape[0], org_shape[1]))
+                    d_cols, d_rows = _c[5][d]
+                    c_pos[d_cols, d_rows] = 255
+                    d_pos[d_cols, d_rows] = 255
+                    d_pos = d_pos.astype(np.uint8)
+                    dpoints = mask2poly(d_pos)
+                    part["damages"].append({"label":d, "points":dpoints})
+                c_pos = c_pos.astype(np.uint8)
+                points = mask2poly(c_pos)
+                part["points"] = points
 
             data["cars"].append(part)
 
     json_data = json.dumps(data, indent=4, separators=(',', ': '))
     with open(path, 'w') as fid:
         fid.write(json_data)
+
+    if is_plot:
+        alpha = 0.5
+        img_dict = {}
+        for c in data["cars"]:
+            img_path = c["image_path"]
+            img = cv2.imread(img_path)
+            if img_path not in img_dict.keys():
+                img_dict[img_path] = [img, []]
+        for c in data["cars"]:
+            img_path = c["image_path"]
+            mask = np.zeros((img_dict[img_path][0].shape[0], img_dict[img_path][0].shape[1]))
+            points = np.array(c["points"])
+            points = np.reshape(points, (points.shape[0], 1, points.shape[1]))
+
+            # cv2.drawContours(mask, [cnt.astype(int)], -1, (255), -1)  # fill the contour
+            cv2.drawContours(mask, [points.astype(int)], -1, (255), 5)
+
+            damages = c["damages"]
+            for d in damages:
+                #print(len(np.asarray(d["points"]).shape))
+                if len(np.asarray(d["points"]).shape) == 1:
+                    # contain multiple contours
+                    for cnt in d["points"]:
+                        dpoints = np.array(cnt)
+                        dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
+                        cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), 5)
+                elif len(np.asarray(d["points"]).shape) == 2:
+                    dpoints = np.array(d["points"])
+                    dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
+                    cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), 5)
+                else:
+                    pass
+
+            img_dict[img_path][1].append(mask)
+
+        for k in img_dict.keys():
+            basename = os.path.basename(k)
+            img = img_dict[k][0]
+            N = len(img_dict[k][1])
+            colors = cathay_utils.random_colors(N)
+            for i in range(N):
+                color = colors[i]
+                mask = img_dict[k][1][i]
+                for c in range(3):
+                    img[:, :, c] = np.where(mask >= 0.5,
+                                            img[:, :, c] *(1 - alpha) + alpha * color[c] * 255,
+                                            img[:, :, c])
+            newname = "predict_"+basename
+            outpath = os.path.join(data["folder"], newname)
+            cv2.imwrite(outpath, img)
 
 
 if __name__ == '__main__':
@@ -650,6 +800,8 @@ if __name__ == '__main__':
             continue
         for f in fs:
             if "json" in f:
+                continue
+            if "predict" in f:
                 continue
             fpath = cathay_utils.path_join(folder, f)
             case_files.append(fpath)
@@ -678,7 +830,7 @@ if __name__ == '__main__':
     logo_time_str = str(datetime.timedelta(seconds=int(time.time()-cur_time)))
     logging.info("Logo Prediction Time: {}".format(logo_time_str))
 
-    summary(seg_dict, logo, color_name, outputfolder=args.case_path)
+    summary(seg_dict, logo, color_name, outputfolder=args.case_path, is_plot=True)
 
     logging.info("Total Time: {} s".format(time.time()-start_time))
     process = psutil.Process(os.getpid())
