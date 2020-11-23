@@ -362,7 +362,11 @@ def evaluate_image(model, img_path, device,
             img = in_img
         else:
             img = img_tensor
-        _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
+
+        dirpath = os.path.dirname(img_path)
+        dirpath = os.path.basename(dirpath)
+        plotname = os.path.basename(img_path).split(".")[0]
+        _name = os.path.join(plot_folder, dirpath+"_"+plotname+"_pred.png")
         visualize.display_instances(img, boxes, masks, labels,
                                     class_names,
                                     is_display=False,

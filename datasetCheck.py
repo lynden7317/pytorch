@@ -24,7 +24,7 @@ COLS = ['CASE', 'ID', 'PASS', 'TRAIN', 'DATE', 'LABELER', 'CHECKER', '#CARs', '#
 CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", \
          "CDFL", "CDBR", "CDBL", "CFFR", "CFFL", \
          "CFBR", "CFBL", "CS", "CMR", "CML", \
-         "CLF", "CLB", "CL", "CG", "CTA", "CTB", "CP", \
+         "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP", \
          "DS", "DD", "DC", "DW", "DH"]
 
 def parse_commands():
@@ -39,6 +39,11 @@ def parse_commands():
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Cathay Car Damage Dataset.')
+
+    parser.add_argument("--app", required=False,
+                        default=0,
+                        metavar=0,
+                        help="app number")
 
     parser.add_argument("--txt_table_path", required=False,
                         default="D:/Cathay_DB/txts/cathay_txt_table.txt",
@@ -169,7 +174,23 @@ def write2txt(txt_path, txtDict):
                 _str = _str + str(txtDict[di][s]) + "\t"
             fid.write(_str[:-1] + "\n")
 
-def update_txt_table(args, root):
+def reset_label_count(args):
+    # read txt table
+    updated_path = "D:/Cathay_DB/txts/cathay_txt_table_updated.txt"
+    txtDict, caseDict = load_txt_table(args.txt_table_path)
+    #print(txtDict)
+    for id in txtDict.keys():
+        for c in ['#CARs', '#DAMAGEs']+CLASS:
+            txtDict[id][c] = 0
+        for d in ["DATE", "LABELER", "CHECKER"]:
+            txtDict[id][d] = "none"
+
+        #print(id)
+
+    write2txt(updated_path, txtDict)
+
+
+def update_txt_table(args, root, tag="車體"):
     # read txt table
     updated_path = "D:/Cathay_DB/txts/cathay_txt_table_updated.txt"
     txtDict, caseDict = load_txt_table(args.txt_table_path)
@@ -188,7 +209,7 @@ def update_txt_table(args, root):
 
             file_name = os.path.basename(fpath).split(".jpg")[0]
             new_name = lab1 + "_" + lab2 + "_" + file_name
-            txtDict[new_name]["PASS"] = "Y"
+            txtDict[new_name]["PASS"] = "Y_("+tag+")"
 
     write2txt(updated_path, txtDict)
 
@@ -199,11 +220,15 @@ def load_labeled_data(args):
 
     dataloader, dataset = create_dataloader(args.folder)
 
+    print("==== load data done ====")
     dataDict = {}
     classDict = dict(enumerate(CLASS, start=1))
     timestr = time.strftime("%Y-%m-%d", time.localtime())
+    counter = 0
     for images, targets in dataloader:
         for _i, v in enumerate(targets):
+            counter += 1
+            print(counter)
             # print(_i, v.keys(), v['image_id'], v['labels'])
             dataset_id = v['image_id']
             labels = v['labels'].cpu().clone().numpy()
@@ -215,7 +240,7 @@ def load_labeled_data(args):
             # print(labelNames)
             dataDict[img_id] = {"DATE": timestr, "LABELS": labelNames, "LABELER": args.labeler, "CHECKER": args.checker}
 
-    print(len(dataDict), dataDict)
+    print("total data len:{}".format(len(dataDict)))
     for id in dataDict.keys():
         for _d in ["DATE", "LABELER", "CHECKER"]:
             txtDict[id][_d] = dataDict[id][_d]
@@ -243,7 +268,7 @@ def cathay_rename_folder(root):
         print(src_dir, dst_dir)
         shutil.move(src_dir, dst_dir)
 
-def cathay_labeled_parser(root):
+def cathay_labeled_parser(root, filter="car"):
     caseDict = {}
     for rs, ds, fs in os.walk(root):
         lab1, lab2, folder = get_labs(rs)
@@ -272,7 +297,16 @@ def cathay_labeled_parser(root):
                         if int(rads[2]) in [1, 2, 3]:
                             caseDict[case_name]["del"] = [True, int(rads[2])]
                         if int(rads[1]) == 1:
-                            caseDict[case_name]["imgs"].append(fpath)
+                            if filter == "car":
+                                if int(rads[0]) == 0:
+                                    caseDict[case_name]["imgs"].append(fpath)
+                            elif filter == "damage":
+                                if int(rads[0]) == 1:
+                                    caseDict[case_name]["imgs"].append(fpath)
+                            else:
+                                pass
+
+                            #caseDict[case_name]["imgs"].append(fpath)
 
                 except:
                     print("cannot open file:{}".format(txt_name))
@@ -305,8 +339,8 @@ def cathay_labeled_parser(root):
             shutil.copy(img_path, copy_file)
 
 
-def case_division(root):
-    num_in_case = 5
+def case_division(root, num_in_case=5):
+    num_in_case = num_in_case
     upper_folder = os.path.dirname(root)
     division_folder = os.path.join(upper_folder, "case_division")
     division_folder = cathay_utils.nt_path(division_folder)
@@ -480,25 +514,34 @@ def app(root):
 
 if __name__ == '__main__':
     args = parse_commands()
-    # APP1
-    #root = "D:/Cathay_DB/Cathay_Image_Dataset_tmp_02" #"D:/Cathay_DB/Cathay_tmp"
-    #cathay_rename_folder(root)
-    #cathay_labeled_parser(root)
 
-    # APP2
-    #root = "./data/case_division/"
-    #app(root)
+    if int(args.app) == 0:
+        print("app{}".format(args.app))
+        # APP1
+        root = "D:/Cathay_DB/Cathay_Image_Dataset_tmp_02" #"D:/Cathay_DB/Cathay_First_Labeled" #"D:/Cathay_DB/Cathay_tmp"
+        #cathay_rename_folder(root)
+        cathay_labeled_parser(root, filter="damage")  # filter="car"/"damage"
+    elif int(args.app) == 1:
+        print("app{}".format(args.app))
+        # APP2
+        # python datasetCheck.py --txt_table_path=D:/Cathay_DB/txts/cathay_txt_table_20201006.txt
+        root = "D:/Cathay_DB/Cathay_Image_Damages_20201110" #"D:/Cathay_DB/Cathay_Image_Cars_2020xxx" or "Damages"
+        update_txt_table(args, root, tag="損傷")  # tag="車體"/"損傷"
+    elif int(args.app) == 2:
+        print("app{}".format(args.app))
+        # APP3
+        # python datasetCheck.py --folder=D:/Cathay_DB/Cathay_Data_Output/Ly/OK/1030 --txt_table_path=D:/Cathay_DB/txts/cathay_txt_table_20201022.txt
+        # --tag=20201030 --labeler=ly --checker=ly
+        # reset_label_count(args)
+        load_labeled_data(args)
+    elif int(args.app) == 3:
+        print("app{}".format(args.app))
+        # APP4
+        root = "D:/Cathay_DB/Cathay_Image_Cars_20201019" #"./data/cathay_real"
+        case_division(root, num_in_case=20)
+        # create_txt_table(root)
+    else:
+        pass
 
-    # APP3
-    #root = "D:/Cathay_DB/Cathay_Image_Training_Standard" #"./data/cathay_real"
-    #case_division(root)
-    #create_txt_table(root)
 
 
-
-    # APP4
-    # python datasetCheck.py --txt_table_path=D:/Cathay_DB/txts/cathay_txt_table_20201006.txt
-    root = "D:/Cathay_DB/Cathay_Image_Database_Refined"
-    update_txt_table(args, root)
-
-    #load_labeled_data(args)

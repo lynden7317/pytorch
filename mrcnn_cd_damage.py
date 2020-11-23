@@ -1,5 +1,7 @@
 import sys
 import os
+import json
+import traceback
 import random
 import numpy as np
 import torch
@@ -51,8 +53,28 @@ SEQ_AUG = iaa.SomeOf((1, 3), [
     iaa.MultiplyHueAndSaturation((0.5, 1.5)),
 ])
 
-def extractColors(mask):
-    pass
+
+def mask2poly(pos):
+    cnts, hier = cv2.findContours(pos, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(cnts) > 1:
+        points = []
+        for c in cnts:
+            _cnt = []
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.01 * peri, True)
+            for p in range(approx.shape[0]):
+                _cnt.append([int(approx[p][0][0]), int(approx[p][0][1])])
+            points.append(_cnt)
+    elif len(cnts) == 1:
+        points = []
+        peri = cv2.arcLength(cnts[0], True)
+        approx = cv2.approxPolyDP(cnts[0], 0.01 * peri, True)
+        for p in range(approx.shape[0]):
+            points.append([int(approx[p][0][0]), int(approx[p][0][1])])
+    else:
+        points = []
+
+    return points
 
 
 def plotMask(dataset, dataloader, class_names):
@@ -236,75 +258,25 @@ def app_color():
 
 
 
-def app_image2masks():
-    datasetRoot = "./data/eval_masks/"
-    pretrained_path = "./weights/20201030/1/mrcnn_cd_noaug_49.pth"
-    # "./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200821_aug_10.pth" #"./weights/mrcnn_cd_20200820_14.pth"
-    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
-             "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
-             "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
-    # CLASS = ['D'] #['DS', 'DD', 'DC', 'DW', 'DH'] #['D']
-    DIM = 1024
-    PAD = 32
-
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    torch.multiprocessing.freeze_support()
-
-    mrcnn = mask_rcnn.MaskRCNN(backbone='resnet101',
-                               anchor_ratios=(0.33, 0.5, 1, 2, 3),
-                               num_classes=1 + len(CLASS))
-
-    mrcnn.load_state_dict(torch.load(pretrained_path))
-    mrcnn.to(device)
-    print(mrcnn)
-
-    plot_folder = './plotTest_mask'
-    for _root, dirs, files in os.walk(datasetRoot):
-        if os.name == 'nt':
-            folder = mrcnnDataGen.ntPath(_root)
-        else:
-            folder = _root
-
-        for f in files:
-            fpath = mrcnnDataGen.path_join(folder, f)
-            print("fpath: {}".format(fpath))
-            results = engine.evaluate_image(mrcnn, fpath, device, CLASS, [True, DIM, DIM], [False, PAD],
-                                            score_threshold=0.7,
-                                            is_plot=True, plot_folder=plot_folder)
-            NP_WHERE_MASK = 0.5
-            img_org = cv2.imread(fpath)
-            # img_org = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            org_shape = img_org.shape
-            img_h, img_w = img_org.shape[0:2]
-            masks = results['masks']
-            for i in range(masks.shape[0]):
-                mask_img = np.zeros((org_shape[0], org_shape[1], 3))
-                # print("i:{}, shape:{}".format(i, pos.shape))
-                for c in range(3):
-                    mask_img[:, :, c] = np.where(masks[i,:,:,0] >= NP_WHERE_MASK, img_org[:,:,c], 0)
-
-                img_name = os.path.basename(fpath)
-                prefix = img_name.split('.jpg')[0]
-                name = os.path.join(plot_folder, prefix + "_m_" + str(i) + ".jpg")
-                print("save: {}".format(name))
-                cv2.imwrite(name, mask_img)
-
 
 def app_load_image():
-    datasetRoot = "./data/eval_20201102/"
-    pretrained_path = "./weights/20201030/3/mrcnn_cd_aug_49.pth"
+    null = None
+    datasetRoot = "./data/eval_damages/20201117/"
+    pretrained_path = "./weights/D_20201113/mrcnn_cd_aug_8.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200821_aug_10.pth" #"./weights/mrcnn_cd_20200820_14.pth"
-    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
-             "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
-             "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
-    #CLASS = ['D'] #['DS', 'DD', 'DC', 'DW', 'DH'] #['D']
+
+    #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
+    #         "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
+    #         "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
+
+    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH', 'DN', 'DR', 'CTA', 'CP'] #['D']  # DN(None), DR(reflect)
     DIM = 1024
     PAD = 32
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
 
-    mrcnn = mask_rcnn.MaskRCNN(backbone='resnet101',
+    mrcnn = mask_rcnn.MaskRCNN(backbone='resnet50',
                                anchor_ratios=(0.33, 0.5, 1, 2, 3),
                                num_classes=1 + len(CLASS))
 
@@ -319,22 +291,101 @@ def app_load_image():
             folder = _root
 
         for f in files:
+            if ".json" in f:
+                continue
+
+            labelmeDict = {"version":"4.5.6", "flags":{}, "shapes":[], \
+                           "imagePath":"", "imageData":null, "imageHeight":0, "imageWidth":0}            
+            
             fpath = mrcnnDataGen.path_join(folder, f)
             print("fpath: {}".format(fpath))
-            engine.evaluate_image(mrcnn, fpath, device, CLASS, [True,DIM,DIM], [True,PAD],
-                                  score_threshold=0.7,
-                                  is_plot=True, plot_folder='./plotTest_20201116_3')
+            try:
+                pre_result = engine.evaluate_image(mrcnn, fpath, device, CLASS, [True,DIM,DIM], [False,PAD],
+                                                   score_threshold=0.7,
+                                                   is_plot=True, plot_folder='./plotTest_D_20201117')
 
+                print(pre_result.keys(), pre_result['labels'], pre_result['scores'], pre_result['class_names'], len(pre_result['masks']))
+                print("masks shape:{}".format(pre_result['masks'].shape))
+                # generate labelme json format
+                NP_WHERE_MASK = 0.5
+                img_org = cv2.imread(fpath)
+                #img_org = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                org_shape = img_org.shape
+                img_h, img_w = img_org.shape[0:2]
+                masks = pre_result['masks']
+            
+                labelmeDict["imagePath"] = os.path.basename(fpath)
+                labelmeDict["imageHeight"] = img_h
+                labelmeDict["imageWidth"] = img_w
+                for i in range(masks.shape[0]):
+                    pos = np.zeros((org_shape[0], org_shape[1]))
+                    #print("i:{}, shape:{}".format(i, pos.shape))
+                    cols, rows = np.where(masks[i,:,:,0] > NP_WHERE_MASK)
+
+                    pos[cols, rows] = 255
+                    pos = pos.astype(np.uint8)
+                    points = mask2poly(pos)
+                
+                    label = pre_result['class_names'][pre_result['labels'][i]]
+                    print("label{}:{}, points:{}".format(i, label, points))
+                    _nd_points = np.array(points)
+                    print(_nd_points.shape, len(_nd_points.shape))
+                    if len(_nd_points.shape) in [1, 3]:
+                        max_len, max_len_id = 0, 0
+                        for _i in range(_nd_points.shape[0]):
+                            if len(points[_i]) > max_len:
+                                max_len = len(points[_i])
+                                max_len_id = _i
+
+                        print(max_len, max_len_id)
+                        points = points[max_len_id]
+
+
+                    polyObj = {"label": "", "points": [], "group_id": null, "shape_type": "polygon", "flags": {}}
+                    polyObj["label"] = label
+                    for p in points:
+                        polyObj["points"].append(p)
+
+                    labelmeDict["shapes"].append(polyObj)
+                
+                    #points = np.array(points)
+                    #points = np.reshape(points, (points.shape[0], 1, points.shape[1]))
+                    #cv2.drawContours(img_org, [points.astype(int)], -1, (255), 5)
+
+                #cv2.imwrite("tt.jpg", img_org)
+                _path = fpath.split('.jpg')[0]
+                json_path = _path + ".json"
+                print("save labelme path:{}".format(json_path))
+                json_data = json.dumps(labelmeDict, indent=2, separators=(',', ': '))
+                with open(json_path, 'w') as fid:
+                    fid.write(json_data)
+
+            except Exception as e:
+                print("fpath: {} not work!".format(fpath))
+                error_class = e.__class__.__name__
+                detail = e.args[0]
+                cl, exc, tb = sys.exc_info()
+                lastCallStack = traceback.extract_tb(tb)[-1]
+                fileName = lastCallStack[0]
+                lineNum = lastCallStack[1]
+                funcName = lastCallStack[2]
+                errMsg = "File \"{}\", line {}, in {}: [{}] {}".format(fileName, lineNum, funcName, error_class, detail)
+                print(errMsg)
+
+            #sys.exit(1)
 
 
 def app():
-    datasetRoot = "./data/Cathay_Image_Training/20201116" #"./data/damage_20200826/" #"./data/damage_0827/"
-    pretrained_path = "./weights/20201030_lr0005/mrcnn_cd_noaug_49.pth"
+    datasetRoot = "./data/Cathay_Damage_Training/20201117" #"./data/damage_20200826/" #"./data/damage_0827/"
+    pretrained_path = "./weights/D_20201113/mrcnn_cd_aug_14.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200820_14.pth"
-    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
-             "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
-             "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
-    #CLASS = ['DS', 'DD', 'DC', 'DW', 'DH'] #['D']
+
+    #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
+    #         "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
+    #         "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
+
+    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH', 'DN', 'DR', 'CTA', 'CP']
+
     BATCHSIZE = 2
     DIM = 1024
     PAD = 32
@@ -359,7 +410,7 @@ def app():
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCHSIZE, shuffle=True, collate_fn=obj_utils.collate_fn)
 
     # resnet50
-    mrcnn = mask_rcnn.MaskRCNN(backbone='resnet101',
+    mrcnn = mask_rcnn.MaskRCNN(backbone='resnet50',
                                anchor_ratios=(0.33, 0.5, 1, 2, 3),
                                num_classes=1 + len(CLASS))
 
@@ -378,7 +429,7 @@ def app():
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.94)
 
     # let's train it for 10 epochs
-    save_model_prefix = './weights/20201116/mrcnn_cd'+'_aug_'
+    save_model_prefix = './weights/D_20201117/mrcnn_cd'+'_aug_'
     for epoch in range(EPOCHS):
         lr_scheduler.step()
         engine.train_one_epoch(mrcnn, optimizer, dataloader, device, epoch, print_freq=10)
@@ -425,5 +476,4 @@ def app():
 if __name__ == '__main__':
     app()
     #app_load_image()
-    #app_image2masks()
     #app_color()
