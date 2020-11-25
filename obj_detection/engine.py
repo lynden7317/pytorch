@@ -88,15 +88,16 @@ def _get_iou_types(model):
 
 def cal_iou(target, predict):
     iouDict = {}
-    print(target['labels'], predict['masks'].shape, target['masks'].shape)
+    print("<iou targets> labels: {}, masks:{}".format(target['labels'], target['masks'].shape))
     labels = target['labels'].cpu().clone().numpy()
     masks = target['masks'].cpu().clone().numpy()
     h, w = masks.shape[1], masks.shape[2]
-    print(labels, type(labels), predict['labels'], type(predict['labels']))
+    print("<iou predicted> labels:{}, masks:{}".format(predict['labels'].tolist(), predict['masks'].shape))
+    #print(labels, type(labels), predict['labels'], type(predict['labels']))
     summary_list = list(set(labels.tolist()+predict['labels'].tolist()))
     print("summary list: {}".format(summary_list))
     for k in summary_list:
-        print(masks.shape)
+        #print(masks.shape)
         if k not in iouDict.keys():
             iouDict[k] = {'target': np.zeros((h, w)), 'predict': np.zeros((h, w)), 'iou': 0.0}
 
@@ -119,7 +120,7 @@ def cal_iou(target, predict):
         iou = inter_area / union
         iouDict[k]['iou'] = iou
         iouDict[k]['true_area'] = true_area
-        iouDict[k]['pred_area'] = true_area
+        iouDict[k]['pred_area'] = pred_area
         iouDict[k]['inter_area'] = inter_area
         #print("true area:{}, predict area:{}, intersection:{}".format(true_area, pred_area, inter_area))
         #print("iou: {}".format(iou))
@@ -146,16 +147,18 @@ def evaluate(model, data_loader, device,
     header = 'Evaluation:'
 
     batch = 0
-    Stat_summary = {}
-    IoUDict = {}
+    STATSUMMARY = {}
+    IOUDICT = {}
     for _c in class_names:
-        Stat_summary[_c] = {'0.5':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
+        STATSUMMARY[_c] = {'0.5':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
                             '0.6':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
                             '0.7':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
                             '0.8':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0},
                             '0.9':{'tp':0, 'fp':0, 'fn':0, 'precision':0.0, 'recall':0.0}}
-        IoUDict[_c] = {'tp':[], 'fp':0, 'fn':0}
+        IOUDICT[_c] = {'tp':[], 'fp':0, 'fn':0}
 
+    img_idx = 0
+    CASEDICT = {}
     for images, targets in metric_logger.log_every(data_loader, data_loader.batch_size, header):
         images = list(img.to(device) for img in images)
 
@@ -165,14 +168,25 @@ def evaluate(model, data_loader, device,
         #sys.exit(1)
 
         outputs = [{k: v.to(device) for k, v in t.items()} for t in outputs]
+        print("len(outputs):{}".format(len(outputs)))
         for _i, t in enumerate(outputs):
             print(targets[_i].keys())
+            print(data_loader.dataset.imgs[img_idx])
+            img_folder = (os.path.dirname(data_loader.dataset.imgs[img_idx])).split('/')[-1]
+            img_name = (os.path.basename(data_loader.dataset.imgs[img_idx])).split('.')[0]
+            print(img_folder, img_name)
+            caseID = img_folder+'_'+img_name
+            CASEDICT[caseID] = {}
+            for _c in class_names:
+                CASEDICT[caseID][_c] = 0.0
+
             if is_plot:
                 img = images[_i].cpu().clone()
                 img = torchvision.transforms.ToPILImage()(img)
                 img = np.array(img)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                _name = "img_b{}_{}.jpg".format(batch, _i)
+                #img_bgr = img
+                _name = caseID + '.jpg'
                 cv2.imwrite(os.path.join(plot_folder, _name), img_bgr)
 
             if len(t['labels']) == 0:
@@ -192,32 +206,40 @@ def evaluate(model, data_loader, device,
             masks = _masks[scores_pass]
             #masks = (_masks[scores_pass]).transpose(1, 2, 3, 0)[0]
             #print(scores_pass, scores_pass[0])
-            print(boxes.shape, labels.shape, scores.shape, masks.shape)
-            print(labels, targets[_i]['labels'])
+            print("<predicted shapes> boxes:{}, labels:{}, scores:{}, masks:{}".format(boxes.shape, labels.shape, scores.shape, masks.shape))
+            print("predicted labels: {}, target labels: {}".format(labels, targets[_i]['labels']))
             IoUs = cal_iou(targets[_i], {'labels':labels, 'masks':masks})
             for _k in IoUs.keys():
                 print("{}, iou:{}".format(_k, IoUs[_k]['iou']))
                 cname = class_names[_k]
+                #if _k == 20:
+                #    print(IoUs[_k])
+
                 if IoUs[_k]['true_area'] > 0 and IoUs[_k]['pred_area'] > 0:
                     # tp
                     iou = IoUs[_k]['iou']
-                    IoUDict[cname]['tp'].append(iou)
+                    IOUDICT[cname]['tp'].append(iou)
+                    CASEDICT[caseID][cname] = iou
                 elif IoUs[_k]['true_area'] == 0 and IoUs[_k]['pred_area'] > 0:
                     # fp
-                    IoUDict[cname]['fp'] += 1
+                    IOUDICT[cname]['fp'] += 1
+                    CASEDICT[caseID][cname] = 'fp'
                 elif IoUs[_k]['true_area'] > 0 and IoUs[_k]['pred_area'] == 0:
                     # fn
-                    IoUDict[cname]['fn'] += 1
+                    IOUDICT[cname]['fn'] += 1
+                    CASEDICT[caseID][cname] = 'fn'
                 else:
                     pass
 
             if is_plot:
-                _name = os.path.join(plot_folder, "img_b{}_{}_pred.png".format(batch, _i))
+                _name = caseID + '_pred.jpg'
+                _name = os.path.join(plot_folder, _name)
                 visualize.display_instances(img, boxes, masks, labels,
                                             class_names,
                                             is_save=[True, _name])
 
-                _name = os.path.join(plot_folder, "img_b{}_{}_true.png".format(batch, _i))
+                _name = caseID + '_true.jpg'
+                _name = os.path.join(plot_folder, _name)
                 tlabels = targets[_i]['labels'].cpu().clone().numpy()
                 tboxes = targets[_i]['boxes'].cpu().clone().numpy()
                 tmasks = targets[_i]['masks'].cpu().clone().numpy()
@@ -227,29 +249,39 @@ def evaluate(model, data_loader, device,
                                             class_names,
                                             is_save=[True, _name])
 
+            img_idx += 1
+
         batch += 1
         model_time = time.time() - model_time
         metric_logger.update(model_time=model_time)
-        #if batch > 5:
-        #    break
-    print("IoUDict: {}".format(IoUDict))
-    for cname in Stat_summary.keys():
+        if batch > 5:
+            break
+
+    #print("IoUDict: {}, CASEDICT: {}".format(IOUDICT, CASEDICT))
+    for cname in STATSUMMARY.keys():
         for _iou, _kiou in [(0.5, '0.5'), (0.6, '0.6'), (0.7, '0.7'), (0.8, '0.8'), (0.9, '0.9')]:
-            tp_max = len(IoUDict[cname]['tp'])
-            tp = len([_t for _t in IoUDict[cname]['tp'] if _t > _iou])
-            fp = IoUDict[cname]['fp']
-            fn = IoUDict[cname]['fn'] + (tp_max-tp)
+            tp_max = len(IOUDICT[cname]['tp'])
+            tp = len([_t for _t in IOUDICT[cname]['tp'] if _t > _iou])
+            fp = IOUDICT[cname]['fp']
+            fn = IOUDICT[cname]['fn'] + (tp_max-tp)
             precision = float(tp)/float((tp+fp)) if (tp+fp) else 0.0
             recall = float(tp)/float((tp+fn)) if (tp+fn) else 0.0
-            Stat_summary[cname][_kiou]['tp'] = tp
-            Stat_summary[cname][_kiou]['fp'] = fp
-            Stat_summary[cname][_kiou]['fn'] = fn
-            Stat_summary[cname][_kiou]['precision'] = float("{:.4}".format(precision))
-            Stat_summary[cname][_kiou]['recall'] = float("{:.4}".format(recall))
+            STATSUMMARY[cname][_kiou]['tp'] = tp
+            STATSUMMARY[cname][_kiou]['fp'] = fp
+            STATSUMMARY[cname][_kiou]['fn'] = fn
+            STATSUMMARY[cname][_kiou]['precision'] = float("{:.4}".format(precision))
+            STATSUMMARY[cname][_kiou]['recall'] = float("{:.4}".format(recall))
 
-    print("Stat_summary: {}".format(Stat_summary))
-    with open('evaluation.txt', 'w') as fid:
-        fid.write(json.dumps(Stat_summary))
+    #print("Stat_summary: {}".format(STATSUMMARY))
+    json_path = os.path.join(plot_folder, 'cases.json')
+    json_data = json.dumps(CASEDICT, indent=2, separators=(',', ':'))
+    with open(json_path, 'w') as fid:
+        fid.write(json_data)
+
+    json_path = os.path.join(plot_folder, 'summary.json')
+    json_data = json.dumps(STATSUMMARY, indent=2, separators=(',',':'))
+    with open(json_path, 'w') as fid:
+        fid.write(json_data)
 
 @torch.no_grad()
 def evaluate_image(model, img_path, device,
