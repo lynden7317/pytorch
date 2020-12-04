@@ -375,9 +375,9 @@ def app_load_image():
             #sys.exit(1)
 
 
-def app():
-    datasetRoot = "./data/Cathay_Damage_Training/20201117" #"./data/damage_20200826/" #"./data/damage_0827/"
-    pretrained_path = "./weights/D_20201113/mrcnn_cd_aug_14.pth"
+def app(apptype='train'):
+    datasetRoot = "./data/eval_damages_labeled/20201202_d_testing" #"./data/Cathay_Damage_Training/20201117"
+    pretrained_path = "./weights/D_20201125/mrcnn_cd_aug_3.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200820_14.pth"
 
     #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
@@ -386,10 +386,18 @@ def app():
 
     CLASS = ['DS', 'DD', 'DC', 'DW', 'DH', 'DN', 'DR', 'CTA', 'CP']
 
+    # ==== parameters ==== #
     BATCHSIZE = 2
+    if apptype == 'eval':
+        AUG = None
+        SHUFFLE = False
+    else:
+        AUG = SEQ_AUG
+        SHUFFLE = True
     DIM = 1024
     PAD = 32
     EPOCHS = 150
+    # =================== #
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
@@ -399,7 +407,7 @@ def app():
     dataset = mrcnnDataGen.MRCnnDataset(datasetRoot,
                                         resize_img=[True, DIM, DIM],
                                         padding=[True, PAD],
-                                        augmentation=SEQ_AUG,
+                                        augmentation=AUG,
                                         pil_process=True,
                                         npy_process=False,
                                         transforms=transforms,
@@ -407,7 +415,7 @@ def app():
                                         field_classes=[],
                                         data_type='page')
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCHSIZE, shuffle=True, collate_fn=obj_utils.collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCHSIZE, shuffle=SHUFFLE, collate_fn=obj_utils.collate_fn)
 
     # resnet50
     mrcnn = mask_rcnn.MaskRCNN(backbone='resnet50',
@@ -418,7 +426,10 @@ def app():
     mrcnn.to(device)
     print(mrcnn)
 
-    #engine.evaluate(mrcnn, dataloader, device, class_names=CLASS, is_plot=True)
+    if apptype == 'eval':
+        engine.evaluate(mrcnn, dataloader, device, class_names=CLASS, is_plot=True, plot_folder='./plotEval_damages')
+        print("evaluation done")
+        return
 
 
     # construct an optimizer
@@ -429,7 +440,8 @@ def app():
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.94)
 
     # let's train it for 10 epochs
-    save_model_prefix = './weights/D_20201117/mrcnn_cd'+'_aug_'
+    save_model_prefix = './weights/D_20201125/mrcnn_cd'+'_aug_'
+    print("save model to: {}".format(save_model_prefix))
     for epoch in range(EPOCHS):
         lr_scheduler.step()
         engine.train_one_epoch(mrcnn, optimizer, dataloader, device, epoch, print_freq=10)
@@ -441,39 +453,9 @@ def app():
     #plotMask(dataset, dataloader, CLASS)
 
 
-    """
-    is_pil = True
-    count = 1
-    for inputs, targets in dataloader:
-        # Make a grid from batch
-        batchid = 0
-        print("input: ", type(inputs), len(inputs), inputs[batchid].shape)
-        print("target: ", type(targets), targets[batchid].keys(), targets[batchid]['masks'].shape)
-        sys.exit(1)
-
-        if is_pil:
-            img = torchvision.transforms.ToPILImage()(inputs[batchid])
-            img = np.array(img)
-            masked_image = img.astype(np.uint32).copy()
-
-        mask = targets[batchid]['masks'].byte()
-        mask = mask.numpy().transpose((1, 2, 0))
-        color = visualize.random_colors(mask.shape[2])
-        for _m in range(mask.shape[2]):
-            masked_image = visualize.apply_mask(masked_image, mask[:, :, _m], color[_m])
-
-        name = "./plotTest/m_"+str(count)+".jpg"
-        print("save: {}".format(name))
-        img = masked_image.astype(np.uint8)
-        plt.imshow(masked_image)
-        plt.savefig(name)
-        count += 1
-        if count > 20:
-            break
-    """
-
-
 if __name__ == '__main__':
-    app()
+    args = cathay_utils.parse_commands()
+
+    app(apptype=args.mode)
     #app_load_image()
     #app_color()

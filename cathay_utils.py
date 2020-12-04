@@ -69,6 +69,11 @@ def parse_commands():
                         metavar="<True|False>",
                         help="open plot image function")
 
+    parser.add_argument('--mode', required=False,
+                        default='train',
+                        metavar="train/eval",
+                        help='train/eval')
+
     args = parser.parse_args()
 
     return args

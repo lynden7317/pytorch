@@ -5,6 +5,7 @@ import os
 import psutil
 import sys
 import datetime
+import requests
 import time
 import copy
 import math
@@ -397,7 +398,7 @@ def car_model(device):
 def damage_model(device):
     MODEL_PATH = "./weights/mrcnn_cd_20200821_aug_10.pth"
     BACKBONE = 'resnet50'
-    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH'] #['D']
+    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH']
 
     mrcnn = mask_rcnn.MaskRCNN(backbone=BACKBONE,
                                anchor_ratios=(0.33, 0.5, 1, 2, 3),
@@ -461,13 +462,13 @@ def car_segmentation(cases, folder):
     DAMAGE_SCORETHRESHOLD = 0.7
     DAMAGE_NMSTHRESHOLD = 0.3
 
-    TMPFOLDER = os.path.join(folder, 'tmp')
+    TMPFOLDER = os.path.join(cathay_utils.nt_path(folder), 'tmp')
     if not os.path.isdir(TMPFOLDER):
         try:
             os.makedirs(TMPFOLDER)
         except:
             logging.error("cannot create folder at path:{}".format(TMPFOLDER))
-            TMPFOLDER = folder
+            TMPFOLDER = cathay_utils.nt_path(folder)
 
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -543,8 +544,72 @@ def case_division(seg_dict):
     return case_dict
 
 
-def plate_detection(case_list):
-    pass
+def plate_detection(case_list, folder):
+    DIM = 1024
+    PAD = 32
+    URL = "http://211.21.191.139:8080/lpr_one"
+
+    TMPFOLDER = cathay_utils.path_join(cathay_utils.nt_path(folder), 'tmp')
+    plate_return_dict = {"plates":[]}
+    if not os.path.isdir(TMPFOLDER):
+        try:
+            os.makedirs(TMPFOLDER)
+        except:
+            logging.error("cannot create folder at path:{}".format(TMPFOLDER))
+            return
+
+    resize_img = [True, DIM, DIM]
+    padding = [True, PAD]
+
+    for cs in case_list:
+        # location as (x, y, w, h)
+        plate = {"image_path":"", "plate":"", "location":[], "confidence":0}
+        img_org = cv2.imread(cs)
+        if img_org.shape[2] != 3:
+            img_org = gray_3_ch(img_org)
+
+        img_org = img_org.astype(np.uint8)
+
+        if padding[0]:
+            pad_format = [(padding[1], padding[1]), (padding[1], padding[1]), (0, 0)]
+            img_p = np.pad(img_org, pad_format, mode='constant', constant_values=0)
+
+        if resize_img[0]:
+            img_p_r, window, scale, resize_padding = resize_image(img_p,
+                                                                  min_dim=resize_img[1],
+                                                                  max_dim=resize_img[2])
+
+        # save resizing image to FOLDER_TMP
+        _path = cathay_utils.path_join(TMPFOLDER, os.path.basename(cs))
+        cv2.imwrite(_path, img_p_r)
+        time.sleep(1)
+
+        files = {'file': open(_path, 'rb')}
+        try:
+            response = requests.post(url=URL, files=files, timeout=2)
+        except requests.exceptions.ReadTimeout:
+            print('Request timed out')
+
+        print(response, response.text)
+        json_format = json.loads(response.text)
+        print(json_format)
+        if json_format is None:
+            print("No plate is detected")
+            continue
+        else:
+            for t in json_format['tag']:
+                plate["image_path"] = _path
+                plate["plate"] = t['plateNumber']
+                x, y, w, h = int(t['objectPicX']), int(t['objectPicY']), int(t['objectWidth']), int(t['objectHeight'])
+                plate["confidence"] = t['plateConfidence']
+                plate["location"] = [x, y, w, h]
+                plate_return_dict["plates"].append(plate)
+
+        #sys.exit(1)
+
+    print("plate_return_dict: {}".format(plate_return_dict))
+    return plate_return_dict
+
 
 def color_detection(case_list):
     # (path_org, path, (x1,y1), (w,h), (cols, rows))
@@ -809,6 +874,13 @@ if __name__ == '__main__':
     logging.debug("files in case:{}".format(case_files))
 
     start_time = time.time()
+    plate_dict = plate_detection(case_files, args.case_path)
+    plate_time_str = str(datetime.timedelta(seconds=int(time.time()-start_time)))
+    logging.info("Plate Detection Time: {}".format(plate_time_str))
+
+    sys.exit(1)
+
+    start_time = time.time()
     seg_dict = car_segmentation(case_files, args.case_path)
     seg_time_str = str(datetime.timedelta(seconds=int(time.time()-start_time)))
     logging.info("Car Segmentation Time: {}".format(seg_time_str))
@@ -817,8 +889,6 @@ if __name__ == '__main__':
         logging.info("key:{}, shape:{}".format(i, IMGDICT[i].shape))
 
     case_dict = case_division(seg_dict)
-
-    plate_detection(case_dict["plates"])
 
     cur_tim = time.time()
     color_name = color_detection(case_dict["colors"])

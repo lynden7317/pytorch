@@ -181,10 +181,14 @@ def evaluate(model, data_loader, device,
                 CASEDICT[caseID][_c] = 0.0
 
             if is_plot:
-                img = images[_i].cpu().clone()
-                img = torchvision.transforms.ToPILImage()(img)
-                img = np.array(img)
+                img = images[_i].mul(255).byte()
+                img = img.cpu().numpy().transpose((1, 2, 0))
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+                #img = images[_i].cpu().clone()
+                #img = torchvision.transforms.ToPILImage()(img)
+                #img = np.array(img)
+                #img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                 #img_bgr = img
                 _name = caseID + '.jpg'
                 cv2.imwrite(os.path.join(plot_folder, _name), img_bgr)
@@ -254,8 +258,9 @@ def evaluate(model, data_loader, device,
         batch += 1
         model_time = time.time() - model_time
         metric_logger.update(model_time=model_time)
-        if batch > 5:
-            break
+
+        #if batch > 5:
+        #    break
 
     #print("IoUDict: {}, CASEDICT: {}".format(IOUDICT, CASEDICT))
     for cname in STATSUMMARY.keys():
