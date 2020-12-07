@@ -314,7 +314,7 @@ def mask_decode(image, result, classes, outputfolder,
     img = np.array(img)
     img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     _name = img_name+".jpg"
-    path_org = os.path.join(outputfolder, _name)
+    path_org = cathay_utils.path_join(outputfolder, _name)
     if path_org not in IMGDICT.keys():
         IMGDICT[path_org] = img_bgr
 
@@ -335,7 +335,9 @@ def mask_decode(image, result, classes, outputfolder,
             # damage area criteria
             pos = np.where(masks[_m,:,:] > NP_WHERE_MASK)
             logging.debug("damage pixels:{}, class:{}".format(pos[0].shape[0], classes[lab]))
-            if pos[0].shape[0] < 4000 and classes[lab] in ['DS', 'DD', 'DC', 'DW']:
+            if classes[lab] in ['DN', 'DR', 'CTA', 'CP']:
+                continue
+            if pos[0].shape[0] < 4000:
                 # the damage region is too small
                 continue
 
@@ -345,7 +347,7 @@ def mask_decode(image, result, classes, outputfolder,
         logging.debug("<car box> (x1,y1):{}, (w,h):{}".format((x1,y1), (w,h)))
 
         _name = img_name + "_" + tag + "_" + str(lab) + "_" + str(len(cls_list[lab])) + ".jpg"
-        path = os.path.join(outputfolder, _name)
+        path = cathay_utils.path_join(outputfolder, _name)
         if logging.getLogger().level == logging.DEBUG:
             mask_img = np.zeros(img_bgr.shape)
             for c in range(3):
@@ -356,7 +358,7 @@ def mask_decode(image, result, classes, outputfolder,
             cv2.imwrite(path, mask_img)
 
         _name = img_name + "_" + tag + "_" + str(lab) + "_" + str(len(cls_list[lab])) + "_s.jpg"
-        path = os.path.join(outputfolder, _name)
+        path = cathay_utils.path_join(outputfolder, _name)
 
         if is_smooth:
             flag, updated = smoothing(masks[_m,:,:], path)
@@ -380,10 +382,11 @@ def mask_decode(image, result, classes, outputfolder,
     return cls_dict
 
 def car_model(device):
-    MODEL_PATH = "./weights/mrcnn_cd_20200908_101_aug_14.pth"
+    MODEL_PATH = "./weights/20201125/mrcnn_cd_aug_4.pth"
     BACKBONE = 'resnet101'
-    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR",
-             "CDBL", "CFFR", "CFFL", "CFBR", "CFBL", "CC", "CP", "CL"]
+    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
+             "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
+             "CLF", "CLB", "CWF", "CWB", "CG", "CTA", "CP"]
 
     mrcnn = mask_rcnn.MaskRCNN(backbone=BACKBONE,
                                anchor_ratios=(0.33, 0.5, 1, 2, 3),
@@ -396,9 +399,9 @@ def car_model(device):
     return mrcnn, CLASS
 
 def damage_model(device):
-    MODEL_PATH = "./weights/mrcnn_cd_20200821_aug_10.pth"
+    MODEL_PATH = "./weights/D_20201125/mrcnn_cd_aug_3.pth"
     BACKBONE = 'resnet50'
-    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH']
+    CLASS = ['DS', 'DD', 'DC', 'DW', 'DH', 'DN', 'DR', 'CTA', 'CP']
 
     mrcnn = mask_rcnn.MaskRCNN(backbone=BACKBONE,
                                anchor_ratios=(0.33, 0.5, 1, 2, 3),
@@ -414,7 +417,7 @@ def merge_car_damage_segs(cars, damages, outputfolder):
     cls_dict = {}
     for _c in cars.keys():
         cls_dict[_c] = []
-        if _c in ["CC", "CP", "CL"]:
+        if _c in ["CP", "CTA"]:
             cls_dict[_c] = cars[_c]
         else:
             for _cc in cars[_c]:
@@ -462,7 +465,7 @@ def car_segmentation(cases, folder):
     DAMAGE_SCORETHRESHOLD = 0.7
     DAMAGE_NMSTHRESHOLD = 0.3
 
-    TMPFOLDER = os.path.join(cathay_utils.nt_path(folder), 'tmp')
+    TMPFOLDER = cathay_utils.path_join(cathay_utils.nt_path(folder), 'tmp')
     if not os.path.isdir(TMPFOLDER):
         try:
             os.makedirs(TMPFOLDER)
@@ -533,13 +536,18 @@ def car_segmentation(cases, folder):
 def case_division(seg_dict):
     case_dict = {"plates":[], "logos":[], "colors":[], "damages":[]}
 
+    # color
     for c in seg_dict.keys():
-        if c in ["CC", "CP", "CL"]:
+        if c in ["CMR", "CML", "CP", "CTA", "CLF", "CLB", "CWF", "CWB", "CG"]:
             continue
         else:
             case_dict["colors"] += copy.deepcopy(seg_dict[c])
 
-    case_dict["logos"] = copy.deepcopy(seg_dict["CL"])
+    # logo
+    case_dict["logos"] = copy.deepcopy(seg_dict["CTA"])
+
+    # plates
+    case_dict["plates"] = copy.deepcopy(seg_dict["CP"])
 
     return case_dict
 
@@ -588,13 +596,13 @@ def plate_detection(case_list, folder):
         try:
             response = requests.post(url=URL, files=files, timeout=2)
         except requests.exceptions.ReadTimeout:
-            print('Request timed out')
+            logging.error('Request timed out')
 
-        print(response, response.text)
+        #print(response, response.text)
         json_format = json.loads(response.text)
-        print(json_format)
+        #print(json_format)
         if json_format is None:
-            print("No plate is detected")
+            logging.warning("No plate is detected")
             continue
         else:
             for t in json_format['tag']:
@@ -607,7 +615,7 @@ def plate_detection(case_list, folder):
 
         #sys.exit(1)
 
-    print("plate_return_dict: {}".format(plate_return_dict))
+    logging.debug("plate_return_dict: {}".format(plate_return_dict))
     return plate_return_dict
 
 
@@ -678,6 +686,9 @@ def logo_detection(case_list):
     DIM = 128
     BATCHSIZE = 16
 
+    if len(case_list) == 0:
+        logging.info("No any logo is located")
+        return "None"
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     torch.multiprocessing.freeze_support()
@@ -732,9 +743,62 @@ def logo_detection(case_list):
     else:
         max_pred_logo = "None"
     logging.info("<logo detection> predicted logo: {}".format(max_pred_logo))
+
     return max_pred_logo
 
-def summary(seg_dict, logo, color, outputfolder, is_plot=False):
+def plate_match(plate_dict, plate_cases):
+    print(plate_dict)
+    print(plate_cases)
+    if len(plate_dict['plates']) == 0:
+        logging.info("No any plate is located")
+        return "None"
+    if len(plate_cases) == 0:
+        logging.info("No any plate is detected")
+        return "None"
+
+    major_plate = [0, 0, "None"]   #[iou, case_id, plate_number]
+    major_plate_pair = [0, -1000]
+    for i, _p in enumerate(plate_dict['plates']):
+        w, h = int(_p['location'][2]), int(_p['location'][3])
+        area = w*h
+        if area > major_plate_pair[1]:
+            major_plate_pair[0] = i
+            major_plate_pair[1] = area
+
+    #print(major_plate_pair)
+
+    major = plate_dict['plates'][major_plate_pair[0]]
+    img = major['image_path']
+    plateNum = major['plate']
+    x1, y1, x2, y2 = major['location'][0], major['location'][1], \
+                     major['location'][0]+major['location'][2], major['location'][1]+major['location'][3]
+    tarArea = (x2-x1+1)*(y2-y1+1)
+
+    #print(img, x1, y1, x2, y2)
+    # format: ("img_path", "img_seg_path", (x,y), (w,h), np(cols,rows))
+    for i, _c in enumerate(plate_cases):
+        _img = _c[0]
+        if img != _img:
+            continue
+
+        _x1, _y1, _x2, _y2 = _c[2][0], _c[2][1], _c[2][0]+_c[3][0], _c[2][1]+_c[3][1]
+        xA = max(x1, _x1)
+        yA = max(y1, _y1)
+        xB = min(x2, _x2)
+        yB = min(y2, _y2)
+        interArea = max(0, xB-xA+1)*max(0, yB-yA+1)
+        boxArea = (_x2-_x1+1)*(_y2-_y1+1)
+        iou = interArea / float(boxArea+tarArea-interArea)
+        if iou > 0.7:
+            if iou > major_plate[0]:
+                major_plate[0] = iou
+                major_plate[1] = i
+                major_plate[2] = plateNum
+
+    logging.info("<plate match> major plate: {}".format(major_plate))
+    return major_plate
+
+def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False):
     def mask2poly(pos):
         cnts, hier = cv2.findContours(pos, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if len(cnts) > 1:
@@ -757,9 +821,10 @@ def summary(seg_dict, logo, color, outputfolder, is_plot=False):
 
         return points
 
-    name = "summary.json"
+    name = save_name
     path = os.path.join(outputfolder, name)
-    data = {"images":len(IMGDICT), "folder": outputfolder, "logo":logo, "color":color, "cars":[]}
+    data = {"images":len(IMGDICT), "folder": outputfolder, "logo":logo, "color":color, "plate":plate[2], \
+            "cars":[]}
     for seg in seg_dict.keys():
         if seg in ['BG']:
             continue
@@ -851,6 +916,54 @@ def summary(seg_dict, logo, color, outputfolder, is_plot=False):
             cv2.imwrite(outpath, img)
 
 
+def phase1_1_flow(args, case_files):
+    total_start_time = time.time()
+
+    # plate detection from API
+    start_time = time.time()
+    plate_dict = plate_detection(case_files, args.case_path)
+    plate_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    logging.info("Plate Detection Time: {}".format(plate_time_str))
+
+    # car and damage detection & segmentation
+    start_time = time.time()
+    seg_dict = car_segmentation(case_files, args.case_path)
+    seg_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    logging.info("Car Segmentation Time: {}".format(seg_time_str))
+    logging.info("IMG Dataset:")
+    for i in IMGDICT.keys():
+        logging.info("key:{}, shape:{}".format(i, IMGDICT[i].shape))
+
+    case_dict = case_division(seg_dict)
+    #print("case_dict: {}".format(case_dict))
+
+    # color detection
+    start_time = time.time()
+    color_name = color_detection(case_dict["colors"])
+    seg_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    logging.info("Color Prediction Time: {}".format(seg_time_str))
+
+    # logo detection
+    start_time = time.time()
+    logo = logo_detection(case_dict["logos"])
+    logo_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    logging.info("Logo Prediction Time: {}".format(logo_time_str))
+
+    # plate match
+    start_time = time.time()
+    plate = plate_match(plate_dict, case_dict["plates"])
+    plate_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    logging.info("Plate Match Time: {}".format(plate_time_str))
+
+    # sum up
+    if args.case_mode == 'single':
+        _name = os.path.basename(case_files[0])
+        summary_json = "summary_"+_name+".json"
+    else:
+        summary_json = "summary.json"
+    summary(summary_json, seg_dict, logo, color_name, plate, outputfolder=args.case_path, is_plot=True)
+    logging.info("Total Time: {} s".format(time.time() - total_start_time))
+
 if __name__ == '__main__':
     args = cathay_utils.parse_commands()
 
@@ -873,36 +986,13 @@ if __name__ == '__main__':
 
     logging.debug("files in case:{}".format(case_files))
 
-    start_time = time.time()
-    plate_dict = plate_detection(case_files, args.case_path)
-    plate_time_str = str(datetime.timedelta(seconds=int(time.time()-start_time)))
-    logging.info("Plate Detection Time: {}".format(plate_time_str))
+    if args.case_mode == 'single':
+        for c in case_files:
+            print("single case: {}".format(c))
+            phase1_1_flow(args, [c])
+    else:
+        phase1_1_flow(args, case_files)
 
-    sys.exit(1)
-
-    start_time = time.time()
-    seg_dict = car_segmentation(case_files, args.case_path)
-    seg_time_str = str(datetime.timedelta(seconds=int(time.time()-start_time)))
-    logging.info("Car Segmentation Time: {}".format(seg_time_str))
-    logging.info("IMG Dataset:")
-    for i in IMGDICT.keys():
-        logging.info("key:{}, shape:{}".format(i, IMGDICT[i].shape))
-
-    case_dict = case_division(seg_dict)
-
-    cur_tim = time.time()
-    color_name = color_detection(case_dict["colors"])
-    seg_time_str = str(datetime.timedelta(seconds=int(time.time()-cur_tim)))
-    logging.info("Color Prediction Time: {}".format(seg_time_str))
-
-    cur_time = time.time()
-    logo = logo_detection(case_dict["logos"])
-    logo_time_str = str(datetime.timedelta(seconds=int(time.time()-cur_time)))
-    logging.info("Logo Prediction Time: {}".format(logo_time_str))
-
-    summary(seg_dict, logo, color_name, outputfolder=args.case_path, is_plot=True)
-
-    logging.info("Total Time: {} s".format(time.time()-start_time))
     process = psutil.Process(os.getpid())
     MB = 1024*1024
     logging.info("Memory Usage: {} MB".format(process.memory_info().rss/MB))

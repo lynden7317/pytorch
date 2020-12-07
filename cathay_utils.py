@@ -74,6 +74,11 @@ def parse_commands():
                         metavar="train/eval",
                         help='train/eval')
 
+    parser.add_argument('--case_mode', required=False,
+                        default='single',
+                        metavar="single/multiple",
+                        help="single/multiple")
+
     args = parser.parse_args()
 
     return args
