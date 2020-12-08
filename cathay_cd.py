@@ -287,14 +287,18 @@ def seg_criterion(tar, thresholds):
     scores = _scores[scores_pass]
     masks = _masks[scores_pass]
 
+    #print("org: {}, {}".format(labels, scores))
+
     # ==== update results with nms_threshold ==== #
+    '''
     _nms_result = torchvision.ops.nms(torch.from_numpy(boxes), torch.from_numpy(scores), thresholds['nms'])
     nms_result = _nms_result.numpy()
-    #logging.debug("nms_result: {}".format(nms_result))
+    logging.debug("nms_result: {}".format(nms_result))
     boxes = boxes[nms_result,:]
     labels = labels[nms_result]
     scores = scores[nms_result]
     masks = masks[nms_result,:,:,:]
+    '''
 
     return {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks}
 
@@ -322,6 +326,7 @@ def mask_decode(image, result, classes, outputfolder,
 
     labels = result["labels"]
     boxes = result["boxes"]
+    scores = result["scores"]
     masks = result["masks"][:,:,:,0]
     logging.debug("<car seg.> mask:{}, boxes:{}".format(masks.shape, boxes.shape))
 
@@ -330,6 +335,7 @@ def mask_decode(image, result, classes, outputfolder,
 
     for _m in range(masks.shape[0]):
         lab = labels[_m]
+        score = scores[_m]
 
         if tag == 'd':
             # damage area criteria
@@ -367,7 +373,7 @@ def mask_decode(image, result, classes, outputfolder,
         else:
             cols, rows = np.where(masks[_m,:,:] > NP_WHERE_MASK)
 
-        cls_list[lab].append((path_org, path, (x1,y1), (w,h), (cols,rows)))
+        cls_list[lab].append((path_org, path, (x1,y1), (w,h), (cols,rows), score))
 
     #logging.debug("predict list:{}".format(cls_list))
 
@@ -382,7 +388,7 @@ def mask_decode(image, result, classes, outputfolder,
     return cls_dict
 
 def car_model(device):
-    MODEL_PATH = "./weights/20201125/mrcnn_cd_aug_4.pth"
+    MODEL_PATH = "./weights/20201125/mrcnn_cd_aug_14.pth"
     BACKBONE = 'resnet101'
     CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
              "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
@@ -415,10 +421,14 @@ def damage_model(device):
 
 def merge_car_damage_segs(cars, damages, outputfolder):
     cls_dict = {}
+    #print("cars: {}".format(cars))
+    #sys.exit(1)
     for _c in cars.keys():
         cls_dict[_c] = []
         if _c in ["CP", "CTA"]:
-            cls_dict[_c] = cars[_c]
+            #cls_dict[_c] = cars[_c]
+            for _cc in cars[_c]:
+                cls_dict[_c].append((_cc[0], _cc[1], _cc[2], _cc[3], _cc[4], {}, _cc[5]))
         else:
             for _cc in cars[_c]:
                 org_shape = IMGDICT[_cc[0]].shape
@@ -442,7 +452,7 @@ def merge_car_damage_segs(cars, damages, outputfolder):
                             loc_damages[_d] = (cd_cols, cd_rows)
 
                 c_cols, c_rows = np.where(c_pos > NP_WHERE_MASK)
-                cls_dict[_c].append((_cc[0], _cc[1], _cc[2], _cc[3], (c_cols, c_rows), loc_damages))
+                cls_dict[_c].append((_cc[0], _cc[1], _cc[2], _cc[3], (c_cols, c_rows), loc_damages, _cc[5]))
 
                 if logging.getLogger().level == logging.DEBUG:
                     img_bgr = IMGDICT[_cc[0]]
@@ -789,6 +799,7 @@ def plate_match(plate_dict, plate_cases):
         interArea = max(0, xB-xA+1)*max(0, yB-yA+1)
         boxArea = (_x2-_x1+1)*(_y2-_y1+1)
         iou = interArea / float(boxArea+tarArea-interArea)
+        #print(iou)
         if iou > 0.7:
             if iou > major_plate[0]:
                 major_plate[0] = iou
@@ -796,6 +807,7 @@ def plate_match(plate_dict, plate_cases):
                 major_plate[2] = plateNum
 
     logging.info("<plate match> major plate: {}".format(major_plate))
+    #sys.exit(1)
     return major_plate
 
 def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False):
@@ -828,35 +840,28 @@ def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False
     for seg in seg_dict.keys():
         if seg in ['BG']:
             continue
-        #print(seg_dict[seg], len(seg_dict[seg]))
+        #print(seg, seg_dict[seg], len(seg_dict[seg]))
         for _c in seg_dict[seg]:
-            part = {"label": seg, "image_path":_c[0], "points": [], "damages": []}
-            if len(_c) < 6:
-                org_shape = IMGDICT[_c[0]].shape
-                c_cols, c_rows = _c[4]
-                c_pos = np.zeros((org_shape[0], org_shape[1]))
-                c_pos[c_cols, c_rows] = 255
-                c_pos = c_pos.astype(np.uint8)
-                points = mask2poly(c_pos)
-                part["points"] = points
+            score = float("%0.3f" %(np.float32(_c[6]).item()))
+            part = {"label": seg, "image_path":_c[0], "score":score, "points": [], "damages": []}
 
-            else:              # including damages
-                org_shape = IMGDICT[_c[0]].shape
-                c_cols, c_rows = _c[4]
-                c_pos = np.zeros((org_shape[0], org_shape[1]))
-                c_pos[c_cols, c_rows] = 255
-                #print(_c[5])
-                for d in _c[5].keys():
-                    d_pos = np.zeros((org_shape[0], org_shape[1]))
-                    d_cols, d_rows = _c[5][d]
-                    c_pos[d_cols, d_rows] = 255
-                    d_pos[d_cols, d_rows] = 255
-                    d_pos = d_pos.astype(np.uint8)
-                    dpoints = mask2poly(d_pos)
-                    part["damages"].append({"label":d, "points":dpoints})
-                c_pos = c_pos.astype(np.uint8)
-                points = mask2poly(c_pos)
-                part["points"] = points
+            org_shape = IMGDICT[_c[0]].shape
+            c_cols, c_rows = _c[4]
+            c_pos = np.zeros((org_shape[0], org_shape[1]))
+            c_pos[c_cols, c_rows] = 255
+            # damages
+            for d in _c[5].keys():
+                d_pos = np.zeros((org_shape[0], org_shape[1]))
+                d_cols, d_rows = _c[5][d]
+                c_pos[d_cols, d_rows] = 255
+                d_pos[d_cols, d_rows] = 255
+                d_pos = d_pos.astype(np.uint8)
+                dpoints = mask2poly(d_pos)
+                part["damages"].append({"label":d, "points":dpoints})
+
+            c_pos = c_pos.astype(np.uint8)
+            points = mask2poly(c_pos)
+            part["points"] = points
 
             data["cars"].append(part)
 
@@ -889,11 +894,11 @@ def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False
                     for cnt in d["points"]:
                         dpoints = np.array(cnt)
                         dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
-                        cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), 5)
+                        cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), -1)
                 elif len(np.asarray(d["points"]).shape) == 2:
                     dpoints = np.array(d["points"])
                     dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
-                    cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), 5)
+                    cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), -1)
                 else:
                     pass
 
@@ -958,6 +963,7 @@ def phase1_1_flow(args, case_files):
     # sum up
     if args.case_mode == 'single':
         _name = os.path.basename(case_files[0])
+        _name = _name.split('.jpg')[0]
         summary_json = "summary_"+_name+".json"
     else:
         summary_json = "summary.json"
