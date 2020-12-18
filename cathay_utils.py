@@ -4,6 +4,19 @@ import argparse
 import random
 import colorsys
 
+COLORSYS = {'#000000':'black', \
+            '#ffffff':'white', \
+            '#c0c0c0':'silver', \
+            '#808080':'gray', \
+            '#ff0000':'red', '#e60000':'red', '#ff2400':'red', '#ff3d00':'red', '#e32636':'red', '#b80007':'red', '#872300':'red', \
+            '#b22222':'red', '#ff4500':'red', '#8b0000':'red',\
+            '#0000ff':'blue', '#007FFF':'blue', '#6495ed':'blue', '#003399':'blue', '#000080':'blue', '#003366':'blue', \
+            '#1e90ff':'blue', '#0d33ff':'blue', '#002fa7':'blue', '#4d80e6':'blue',\
+            '#008000':'green', '#ccff00':'green', '#00ff00':'green', '#006400':'green', '#00ff80':'green', '#4de680':'green', \
+            '#2e8b57':'green', '#3cb371':'green', '#127436':'green', '#2e8b57':'green',\
+            '#ffff00':'yellow', '#ffff50':'yellow', '#ffffA0':'yellow', '#ffd600':'yellow', '#ffd680':'yellow', '#d9b200':'yellow', \
+            '#d9b250':'yellow', '#ffcc00':'yellow', '#ffef00':'yellow', '#ffff4d':'yellow'}
+
 def random_colors(N, bright=True):
     """
     Generate random colors.
@@ -32,7 +45,8 @@ def path_join(p1, p2):
 
 def closest_colour(requested_colour):
     min_colours = {}
-    for key, name in webcolors.HTML4_HEX_TO_NAMES.items():
+    # webcolors.HTML4_HEX_TO_NAMES.items()
+    for key, name in COLORSYS.items():
         r_c, g_c, b_c = webcolors.hex_to_rgb(key)
         rd = (r_c - requested_colour[0]) ** 2
         gd = (g_c - requested_colour[1]) ** 2

@@ -92,12 +92,11 @@ class gui(object):
 
     def createN1Images(self):
         self.GUI['N1_images'] = {'name': "N1_images", 'strVar': tk.StringVar(),
-                                 'rad1Var': tk.IntVar(), 'rad2Var': tk.IntVar(),
+                                 'rad1Var': tk.IntVar(),
                                  'panel': None, 'info': None, 'lab_total': None, 'lab_mark': None}
         
         def rads_default_values():
             self.GUI['N1_images']['rad1Var'].set(0)
-            self.GUI['N1_images']['rad2Var'].set(0)
         
         self.GUI['N1_images']['setRads2Default'] = rads_default_values
         
@@ -133,21 +132,11 @@ class gui(object):
         #          command=self.uiCtrl.delegator(function='mark', **uiFrame)).grid(row=0, column=7)
         
         
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(前, 後)', font=('Arial', 12)).grid(row=0, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad1Var'], value=0, \
+        tk.Label(uiFrame['f3'], text='是否刪除', font=('Arial', 12)).grid(row=0, columnspan=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='否', variable=uiFrame['rad1Var'], value=0, \
         font=('Arial', 12)).grid(row=1, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='前', variable=uiFrame['rad1Var'], value=1, \
+        tk.Radiobutton(uiFrame['f3'], text='是', variable=uiFrame['rad1Var'], value=1, \
         font=('Arial', 12)).grid(row=1, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='後', variable=uiFrame['rad1Var'], value=2, \
-        font=('Arial', 12)).grid(row=1, column=2, sticky=tk.W)
-
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(左, 右)', font=('Arial', 12)).grid(row=2, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad2Var'], value=0, \
-        font=('Arial', 12)).grid(row=3, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='左', variable=uiFrame['rad2Var'], value=1, \
-        font=('Arial', 12)).grid(row=3, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='右', variable=uiFrame['rad2Var'], value=2, \
-        font=('Arial', 12)).grid(row=3, column=2, sticky=tk.W)
 
 
     def N1FramesPack(self):

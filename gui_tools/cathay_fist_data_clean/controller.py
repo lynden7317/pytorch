@@ -178,6 +178,7 @@ class uiController(object):
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
                         kwargs['rad2Var'].set(int(rads[1]))
+                        kwargs['rad3Var'].set(int(rads[2]))
                 except:
                     print("no label file")
 
@@ -211,6 +212,7 @@ class uiController(object):
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
                         kwargs['rad2Var'].set(int(rads[1]))
+                        kwargs['rad3Var'].set(int(rads[2]))
                 except:
                     print("no label file")
             else:
@@ -254,11 +256,11 @@ class uiController(object):
                 basename = os.path.basename(pre_fname).split('.jpg')[0]
                 dirpath = os.path.dirname(pre_fname)
                 print("save labfile", pre_fname, basename, dirpath)
-                print(kwargs['rad1Var'].get(), kwargs['rad2Var'].get())
+                print(kwargs['rad1Var'].get(), kwargs['rad2Var'].get(), kwargs['rad3Var'].get())
                 labpath = os.path.join(dirpath, basename+".txt")
                 
                 with open(labpath, 'w') as fid:
-                    labstr = str(kwargs['rad1Var'].get())+" "+str(kwargs['rad2Var'].get())
+                    labstr = str(kwargs['rad1Var'].get())+" "+str(kwargs['rad2Var'].get())+" "+str(kwargs['rad3Var'].get())
                     fid.write(labstr)
             
             # load mark file, if exist
@@ -273,6 +275,7 @@ class uiController(object):
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
                         kwargs['rad2Var'].set(int(rads[1]))
+                        kwargs['rad3Var'].set(int(rads[2]))
                 except:
                     pass
             else:

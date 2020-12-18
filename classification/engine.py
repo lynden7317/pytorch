@@ -5,6 +5,7 @@ import copy
 import cv2
 import re
 import torch
+import shutil
 import numpy as np
 
 import torch.nn as nn
@@ -36,20 +37,28 @@ def img2torch(img_path, transforms=None, height=224, width=224):
 @torch.no_grad()
 def evaluate_image(model, device,
                    img_path,
+                   topk=1,
                    transforms=None,
                    height=224, width=224,
                    classes_name=[],
-                   is_plot=False,
                    is_save=False,
-                   plot_folder='./plotEval'):
+                   save_folder='./clf_eval'):
 
+    auto_counter = 0
     if is_save:
-        if not os.path.isdir(plot_folder):
+        if not os.path.isdir(save_folder):
             try:
-                os.makedirs(plot_folder)
+                os.makedirs(save_folder)
             except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise
+                print("cannot create folder:{}".format(save_folder))
+        else:
+            auto_counter = len([name for name in os.listdir(save_folder) if os.path.isfile(os.path.join(save_folder, name))])
+
+        if not os.path.isdir(os.path.join(save_folder, 'wrong')):
+            try:
+                os.makedirs(os.path.join(save_folder, 'wrong'))
+            except OSError as e:
+                print("cannot create wrong folder")
 
     was_training = model.training
     model.eval()
@@ -60,31 +69,37 @@ def evaluate_image(model, device,
 
     input = img.to(device)
     output = model(input)
-    _, pred = torch.max(output, 1)
+    print(output)
+    vals, inds = torch.topk(output, topk)
+    vals = vals.cpu().clone().numpy()
+    inds = inds.cpu().clone().numpy()
+    print(vals, inds)
+    pred_labs = [classes_name[i] for i in inds[0]]
+    #print(pred_labs)
+    #sys.exit(1)
+    #_, pred = torch.max(output, 1)
 
-    imgName = os.path.basename(img_path)
-    true_lab = NAME_SPLIT_FUNC(imgName)
-    if classes_name[pred[0]] == true_lab:
-        #print("{}, lab:{}, pred:{}".format(imgName, true_lab, classes_name[pred[0]]))
-        is_save = True
-    else:
-        print("{}, lab:{}, pred:{}".format(imgName, true_lab, classes_name[pred[0]]))
-        is_save = False
+    print("save auto-counter: {}".format(auto_counter))
+    if is_save:
+        pre_lab = "-".join(pred_labs)
+        _name = pre_lab + str(auto_counter) + ".jpg"
+        print(pre_lab)
 
-    if is_plot:
-        if is_save:
-            _name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=True, is_save=[True, _name])
+        img_name = (os.path.basename(img_path)).split('.jpg')[0]
+        true_lab = NAME_SPLIT_FUNC(img_name)
+
+        if true_lab in pred_labs:
+            _name = pre_lab + "_" + true_lab + str(auto_counter) + ".jpg"
+            save2 = os.path.join(save_folder, _name)
         else:
-            visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=True)
-    else:
-        if is_save:
-            #_name = os.path.join(plot_folder, os.path.basename(img_path).split(".")[0]+"_pred.png")
-            #visualize.imshow(["npy", img_org], title=classes_name[pred[0]], is_display=False, is_save=[True, _name])
-            _name = os.path.join(plot_folder, imgName)
-            cv2.imwrite(_name, img_org)
+            _name = pre_lab + "_" + true_lab + str(auto_counter) + ".jpg"
+            wrong_folder = os.path.join(save_folder, 'wrong')
+            save2 = os.path.join(wrong_folder, _name)
+
+        shutil.copyfile(img_path, save2)
 
     model.train(mode=was_training)
+    return pred_labs
 
 @torch.no_grad()
 def evaluate(model, device, dataloader, classes_name=[]):

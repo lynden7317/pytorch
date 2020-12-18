@@ -460,7 +460,6 @@ class MRCnnDataset(object):
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         target = {}
-        print(_data, idx)
 
         height = int(_data['frame']['height'])
         width = int(_data['frame']['width'])
@@ -527,7 +526,7 @@ class MRCnnDataset(object):
                     xmax = np.max(pos[1])
                     ymin = np.min(pos[0])
                     ymax = np.max(pos[0])
-                    print(xmin, xmax, ymin, ymax)
+                    #print(xmin, xmax, ymin, ymax)
                     boxes.append([xmin, ymin, xmax, ymax])
                 except:
                     print("WARNING: pos shape error, skip this case {},{}".format(pos[0].shape, pos[1].shape))

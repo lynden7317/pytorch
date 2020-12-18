@@ -302,8 +302,8 @@ def seg_criterion(tar, thresholds):
 
     return {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks}
 
-def major_car(cls_dict):
-    # determine the major car segmentations
+def car_rules(image, cls_dict):
+    # car checking rules
     pass
 
 def mask_decode(image, result, classes, outputfolder,
@@ -529,7 +529,8 @@ def car_segmentation(cases, folder):
                 c_results.update({"path": img_path})
                 car_mask_dict = mask_decode(images[_i], c_results, car_class_names, TMPFOLDER,
                                             tag='c', is_smooth=True)
-                major_car(car_mask_dict)
+                #major_car(car_mask_dict)
+                car_rules(images[_i], car_mask_dict)
 
             if car_mask_dict is not None and damage_mask_dict is not None:
                 logging.debug("merge car & damage segmentations")
@@ -548,7 +549,8 @@ def case_division(seg_dict):
 
     # color
     for c in seg_dict.keys():
-        if c in ["CMR", "CML", "CP", "CTA", "CLF", "CLB", "CWF", "CWB", "CG"]:
+        if c in ["CMR", "CML", "CP", "CTA", "CLF", "CLB", \
+                 "CWF", "CWB", "CG", "CBF", "CBB", "CS"]:
             continue
         else:
             case_dict["colors"] += copy.deepcopy(seg_dict[c])
@@ -662,19 +664,22 @@ def color_detection(case_list):
                 if avg > 0:
                     avg = float(1.0/float(avg))
                     color_bgr_avg = np.array(color_bgr*avg, dtype=np.int32)
-                    #print(avg, color_bgr_avg)
+                    #print(c, avg, color_bgr_avg)
                     # input to rgb
                     cname = cathay_utils.closest_colour((color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]))
                     if cname in colors.keys():
                         colors[cname] += 1
                     else:
                         colors[cname] = 1
-                    #print(avg, color_bgr_avg, cname)
 
+                    print(c, avg, (color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), cname)
+
+    print(colors)
+    sys.exit(1)
     max_color = sorted(colors, key=lambda k: colors[k])
-    if len(max_color) > 2:
-        colorName = max_color[-1] + "_" + max_color[-2]
-    elif len(max_color) > 1:
+    #if len(max_color) > 2:
+    #    colorName = max_color[-1] + "_" + max_color[-2]
+    if len(max_color) > 1:
         colorName = max_color[-1]
     else:
         colorName = "None"
@@ -971,6 +976,7 @@ def phase1_1_flow(args, case_files):
     logging.info("Total Time: {} s".format(time.time() - total_start_time))
 
 if __name__ == '__main__':
+    # python cathay_cd.py --case_path=./case_flow_test/20201207 --case_mode=single
     args = cathay_utils.parse_commands()
 
     args_check(args)

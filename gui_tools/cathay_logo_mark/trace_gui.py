@@ -92,12 +92,11 @@ class gui(object):
 
     def createN1Images(self):
         self.GUI['N1_images'] = {'name': "N1_images", 'strVar': tk.StringVar(),
-                                 'rad1Var': tk.IntVar(), 'rad2Var': tk.IntVar(),
+                                 'rad1Var': tk.IntVar(),
                                  'panel': None, 'info': None, 'lab_total': None, 'lab_mark': None}
         
         def rads_default_values():
             self.GUI['N1_images']['rad1Var'].set(0)
-            self.GUI['N1_images']['rad2Var'].set(0)
         
         self.GUI['N1_images']['setRads2Default'] = rads_default_values
         
@@ -133,21 +132,47 @@ class gui(object):
         #          command=self.uiCtrl.delegator(function='mark', **uiFrame)).grid(row=0, column=7)
         
         
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(前, 後)', font=('Arial', 12)).grid(row=0, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad1Var'], value=0, \
-        font=('Arial', 12)).grid(row=1, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='前', variable=uiFrame['rad1Var'], value=1, \
-        font=('Arial', 12)).grid(row=1, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='後', variable=uiFrame['rad1Var'], value=2, \
-        font=('Arial', 12)).grid(row=1, column=2, sticky=tk.W)
-
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(左, 右)', font=('Arial', 12)).grid(row=2, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad2Var'], value=0, \
-        font=('Arial', 12)).grid(row=3, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='左', variable=uiFrame['rad2Var'], value=1, \
-        font=('Arial', 12)).grid(row=3, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='右', variable=uiFrame['rad2Var'], value=2, \
-        font=('Arial', 12)).grid(row=3, column=2, sticky=tk.W)
+        tk.Label(uiFrame['f3'], text='圖中車的Logo', font=('Arial', 12)).grid(row=0, columnspan=3, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='BMW', variable=uiFrame['rad1Var'], value=0, \
+                        font=('Arial', 12)).grid(row=1, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Audi', variable=uiFrame['rad1Var'], value=1, \
+                        font=('Arial', 12)).grid(row=1, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Honda', variable=uiFrame['rad1Var'], value=2, \
+                        font=('Arial', 12)).grid(row=1, column=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Hyundai(現代)', variable=uiFrame['rad1Var'], value=3, \
+                       font=('Arial', 12)).grid(row=1, column=3, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Lexus', variable=uiFrame['rad1Var'], value=4, \
+                       font=('Arial', 12)).grid(row=2, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Luxgen', variable=uiFrame['rad1Var'], value=5, \
+                       font=('Arial', 12)).grid(row=2, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Maserati(瑪莎拉蒂)', variable=uiFrame['rad1Var'], value=6, \
+                       font=('Arial', 12)).grid(row=2, column=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Mazda', variable=uiFrame['rad1Var'], value=7, \
+                       font=('Arial', 12)).grid(row=2, column=3, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Mercedes(賓士)', variable=uiFrame['rad1Var'], value=8, \
+                       font=('Arial', 12)).grid(row=3, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Nissan', variable=uiFrame['rad1Var'], value=9, \
+                       font=('Arial', 12)).grid(row=3, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Skoda', variable=uiFrame['rad1Var'], value=10, \
+                       font=('Arial', 12)).grid(row=3, column=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Subaru', variable=uiFrame['rad1Var'], value=11, \
+                       font=('Arial', 12)).grid(row=3, column=3, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Suzuki', variable=uiFrame['rad1Var'], value=12, \
+                       font=('Arial', 12)).grid(row=4, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Toyota', variable=uiFrame['rad1Var'], value=13, \
+                       font=('Arial', 12)).grid(row=4, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Volkswagen', variable=uiFrame['rad1Var'], value=14, \
+                       font=('Arial', 12)).grid(row=4, column=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Volvo', variable=uiFrame['rad1Var'], value=15, \
+                       font=('Arial', 12)).grid(row=4, column=3, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Ford', variable=uiFrame['rad1Var'], value=16, \
+                       font=('Arial', 12)).grid(row=5, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Mitsubishi(三菱)', variable=uiFrame['rad1Var'], value=17, \
+                       font=('Arial', 12)).grid(row=5, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='Smart', variable=uiFrame['rad1Var'], value=18, \
+                       font=('Arial', 12)).grid(row=5, column=2, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='認不出來', variable=uiFrame['rad1Var'], value=19, \
+                       font=('Arial', 12)).grid(row=5, column=3, sticky=tk.W)
 
 
     def N1FramesPack(self):

@@ -177,7 +177,6 @@ class uiController(object):
                         li = fid.readline()
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
-                        kwargs['rad2Var'].set(int(rads[1]))
                 except:
                     print("no label file")
 
@@ -210,7 +209,6 @@ class uiController(object):
                         li = fid.readline()
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
-                        kwargs['rad2Var'].set(int(rads[1]))
                 except:
                     print("no label file")
             else:
@@ -254,11 +252,11 @@ class uiController(object):
                 basename = os.path.basename(pre_fname).split('.jpg')[0]
                 dirpath = os.path.dirname(pre_fname)
                 print("save labfile", pre_fname, basename, dirpath)
-                print(kwargs['rad1Var'].get(), kwargs['rad2Var'].get())
+                print(kwargs['rad1Var'].get())
                 labpath = os.path.join(dirpath, basename+".txt")
                 
                 with open(labpath, 'w') as fid:
-                    labstr = str(kwargs['rad1Var'].get())+" "+str(kwargs['rad2Var'].get())
+                    labstr = str(kwargs['rad1Var'].get())
                     fid.write(labstr)
             
             # load mark file, if exist
@@ -272,7 +270,6 @@ class uiController(object):
                         li = fid.readline()
                         rads = li.split(" ")
                         kwargs['rad1Var'].set(int(rads[0]))
-                        kwargs['rad2Var'].set(int(rads[1]))
                 except:
                     pass
             else:
@@ -293,11 +290,12 @@ class uiController(object):
             return None
 
     def _readImg(self, path):
+        dim = 128
         img = cv2.imread(path)
         cv2image = cv2.cvtColor(img, cv2.COLOR_BGR2RGBA)
         w, h = img.shape[1], img.shape[0]
         #print('w: {}, h:{}'.format(w, h))
-        img_re, _, _, _ = resize_image(cv2image, min_dim=512, max_dim=512)
+        img_re, _, _, _ = resize_image(cv2image, min_dim=dim, max_dim=dim)
         current_image = Image.fromarray(img_re)
         #print('resize: {}'.format(img_re.shape))
         imgtk = ImageTk.PhotoImage(image=current_image)

@@ -54,6 +54,11 @@ class gui(object):
         self.GUI['N3'] = None
 
         self.GUI['N1_images'] = None
+
+        self.GUI['N2_tooth'] = None
+
+        self.GUI['N3_tooth'] = None
+
         self.GUI['Log'] = None
 
         self.GUI['MAIN'].pack(fill=tk.BOTH, expand=True)
@@ -92,12 +97,13 @@ class gui(object):
 
     def createN1Images(self):
         self.GUI['N1_images'] = {'name': "N1_images", 'strVar': tk.StringVar(),
-                                 'rad1Var': tk.IntVar(), 'rad2Var': tk.IntVar(),
+                                 'rad1Var': tk.IntVar(), 'rad2Var': tk.IntVar(), 'rad3Var': tk.IntVar(),
                                  'panel': None, 'info': None, 'lab_total': None, 'lab_mark': None}
         
         def rads_default_values():
             self.GUI['N1_images']['rad1Var'].set(0)
-            self.GUI['N1_images']['rad2Var'].set(0)
+            self.GUI['N1_images']['rad2Var'].set(1)
+            self.GUI['N1_images']['rad3Var'].set(0)
         
         self.GUI['N1_images']['setRads2Default'] = rads_default_values
         
@@ -133,22 +139,28 @@ class gui(object):
         #          command=self.uiCtrl.delegator(function='mark', **uiFrame)).grid(row=0, column=7)
         
         
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(前, 後)', font=('Arial', 12)).grid(row=0, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad1Var'], value=0, \
+        tk.Label(uiFrame['f3'], text='是否有部分明確車體?', font=('Arial', 12)).grid(row=0, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='是', variable=uiFrame['rad1Var'], value=0, \
         font=('Arial', 12)).grid(row=1, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='前', variable=uiFrame['rad1Var'], value=1, \
+        tk.Radiobutton(uiFrame['f3'], text='否', variable=uiFrame['rad1Var'], value=1, \
         font=('Arial', 12)).grid(row=1, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='後', variable=uiFrame['rad1Var'], value=2, \
-        font=('Arial', 12)).grid(row=1, column=2, sticky=tk.W)
-
-        tk.Label(uiFrame['f3'], text='圖中主要車體方位(左, 右)', font=('Arial', 12)).grid(row=2, columnspan=3, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='無', variable=uiFrame['rad2Var'], value=0, \
+        tk.Label(uiFrame['f3'], text='是否刪除此圖片?', \
+        font=('Arial', 12)).grid(row=2, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='是', variable=uiFrame['rad2Var'], value=0, \
         font=('Arial', 12)).grid(row=3, column=0, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='左', variable=uiFrame['rad2Var'], value=1, \
+        tk.Radiobutton(uiFrame['f3'], text='否', variable=uiFrame['rad2Var'], value=1, \
         font=('Arial', 12)).grid(row=3, column=1, sticky=tk.W)
-        tk.Radiobutton(uiFrame['f3'], text='右', variable=uiFrame['rad2Var'], value=2, \
-        font=('Arial', 12)).grid(row=3, column=2, sticky=tk.W)
-
+        tk.Label(uiFrame['f3'], text='刪除原因', \
+        font=('Arial', 12)).grid(row=4, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='車體內部', variable=uiFrame['rad3Var'], value=0, \
+        font=('Arial', 12)).grid(row=5, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='貨車', variable=uiFrame['rad3Var'], value=1, \
+        font=('Arial', 12)).grid(row=5, column=1, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='廂型車', variable=uiFrame['rad3Var'], value=2, \
+        font=('Arial', 12)).grid(row=6, column=0, sticky=tk.W)
+        tk.Radiobutton(uiFrame['f3'], text='其他', variable=uiFrame['rad3Var'], value=3, \
+        font=('Arial', 12)).grid(row=6, column=1, sticky=tk.W)
+        
 
     def N1FramesPack(self):
         self.GUI['N1_images']['f1'].grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky=tk.W)
