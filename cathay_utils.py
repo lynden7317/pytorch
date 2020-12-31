@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import webcolors
 import argparse
 import random
@@ -97,6 +98,40 @@ def parse_commands():
 
     return args
 
+def bbox_iou(bA, bB):
+    # bbox = [xmin, ymin, xmax, ymax]
+    xA = max(bA[0], bB[0])
+    yA = max(bA[1], bB[1])
+    xB = min(bA[2], bB[2])
+    yB = min(bA[3], bB[3])
+
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+
+    boxAArea = (bA[2] - bA[0] + 1) * (bA[3] - bA[1] + 1)
+    boxBArea = (bB[2] - bB[0] + 1) * (bB[3] - bB[1] + 1)
+
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+
+    return iou
+
+def cal_iou(tar, comp, org_shape):
+    merge = False
+    t_pos = np.zeros((org_shape[0], org_shape[1]))
+    c_pos = np.zeros((org_shape[0], org_shape[1]))
+    t_cols, t_rows = tar[4]
+    c_cols, c_rows = comp[4]
+    t_pos[t_cols, t_rows] = 1
+    c_pos[c_cols, c_rows] = 1
+    iou_pos = t_pos * c_pos
+    iou = np.sum(np.sum(iou_pos, axis=0), axis=0)
+    print(len(t_cols), len(c_cols))
+    print("iou:{}".format(iou))
+    intersection = iou/len(c_cols)
+    if intersection > 0.7:
+        print("merge to target: {}".format(intersection))
+        merge = True
+
+    return merge
 
 #requested_colour = (122, 105, 94)
 #name = closest_colour(requested_colour)

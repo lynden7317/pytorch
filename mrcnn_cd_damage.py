@@ -377,7 +377,7 @@ def app_load_image():
 
 def app(apptype='train'):
     datasetRoot = "./data/eval_damages_labeled/20201202_d_testing" #"./data/Cathay_Damage_Training/20201117"
-    pretrained_path = "./weights/D_20201125/mrcnn_cd_aug_3.pth"
+    pretrained_path = "./weights/D_20201125_cars_all_damages/mrcnn_cd_aug_4.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200820_14.pth"
 
     #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \

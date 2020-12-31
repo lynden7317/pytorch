@@ -20,6 +20,7 @@ import torchvision
 import skimage.transform
 
 import cathay_utils
+import c_post_rules
 
 from obj_detection import mask_rcnn
 from obj_detection import utils as obj_utils
@@ -303,8 +304,14 @@ def seg_criterion(tar, thresholds):
     return {"boxes":boxes, "labels":labels, "scores":scores, "masks":masks}
 
 def car_rules(image, cls_dict):
-    # car checking rules
     pass
+    # car checking rules
+    #c_post_rules.position_merge(IMGDICT, cls_dict)
+    car_side = c_post_rules.side_check(image)
+    print("car_side: {}".format(car_side))
+    c_post_rules.remove_wrongs(car_side, cls_dict)
+    c_post_rules.correct_wrongs(car_side, cls_dict)
+    #sys.exit(1)
 
 def mask_decode(image, result, classes, outputfolder,
                 tag='c',
@@ -388,7 +395,7 @@ def mask_decode(image, result, classes, outputfolder,
     return cls_dict
 
 def car_model(device):
-    MODEL_PATH = "./weights/20201125/mrcnn_cd_aug_14.pth"
+    MODEL_PATH = "./weights/20201211_1/mrcnn_cd_aug_15.pth"
     BACKBONE = 'resnet101'
     CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
              "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
@@ -672,10 +679,10 @@ def color_detection(case_list):
                     else:
                         colors[cname] = 1
 
-                    print(c, avg, (color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), cname)
+                    #print(c, avg, (color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), cname)
 
-    print(colors)
-    sys.exit(1)
+    #print(colors)
+    #sys.exit(1)
     max_color = sorted(colors, key=lambda k: colors[k])
     #if len(max_color) > 2:
     #    colorName = max_color[-1] + "_" + max_color[-2]
@@ -691,12 +698,13 @@ def color_detection(case_list):
 @torch.no_grad()
 def logo_detection(case_list):
     logging.debug("logos: {}".format(case_list))
-    MODEL_PATH = "./weights/resnet50_10.pth"
+    MODEL_PATH = "./weights/car_logo/20201215/best_resnet50.pth" #"./weights/resnet50_10.pth"
     MODEL = 'resnet50'
     CLASSES = ['Alfa Romeo', 'Audi', 'BMW', 'Chevrolet', 'Citroen', 'Dacia', 'Daewoo', 'Dodge', 'Ferrari', 'Fiat', \
                'Ford', 'Honda', 'Hyundai', 'Jaguar', 'Jeep', 'Kia', 'Lada', 'Lancia', 'Land Rover', 'Lexus', \
                'Maserati', 'Mazda', 'Mercedes', 'Mitsubishi', 'Nissan', 'Opel', 'Peugeot', 'Porsche', 'Renault', 'Rover', \
-               'Saab', 'Seat', 'Skoda', 'Subaru', 'Suzuki', 'Tata', 'Tesla', 'Toyota', 'Volkswagen', 'Volvo']
+               'Saab', 'Seat', 'Skoda', 'Subaru', 'Suzuki', 'Tata', 'Tesla', 'Toyota', 'Volkswagen', 'Volvo', \
+               'Luxgen', 'Mini', 'Smart', 'Infiniti']
     PAD = 8
     DIM = 128
     BATCHSIZE = 16
@@ -713,6 +721,10 @@ def logo_detection(case_list):
         img_bgr = IMGDICT[i[0]]
         x1, y1 = i[2]
         w, h = i[3]
+        if w*h < 1600:
+            logging.debug("<logo detection> case too small:{}".format(len(cases)))
+            continue
+
         cols_org, rows_org = i[4]
         logo_img_bgr = np.zeros((h,w,3))
         logo_img_rgb = np.zeros((h, w, 3))
@@ -1002,6 +1014,7 @@ if __name__ == '__main__':
         for c in case_files:
             print("single case: {}".format(c))
             phase1_1_flow(args, [c])
+            sys.exit(1)
     else:
         phase1_1_flow(args, case_files)
 

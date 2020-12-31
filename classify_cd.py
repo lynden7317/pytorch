@@ -65,8 +65,10 @@ SEQ_AUG = iaa.SomeOf((1, 4), [
 NAME_SPLIT_FUNC = lambda x:(re.compile(r'[a-zA-Z ]+')).findall(x)[0]
 
 def app(apptype='train'):
-    ROOT = "./data/Cathay_Logo_Classify/20201215" #"./data/damages"
-    PRETRAINED = './classification/weights/resnet50-19c8e357.pth' #'./weights/Classify/Side_20201209/best_resnet50.pth'
+    ROOT = 'D:/Cathay_DB/Cathay_Logo_Classify/CTA_test/CTADIR_20201211_2'
+    #"./data/Cathay_Logo_Classify/20201215" #"./data/damages"
+    PRETRAINED = './weights/car_logo/20201215/best_resnet50.pth'
+    #'./weights/Classify/Side_20201209/best_resnet50.pth'
     #'./classification/weights/resnet50-19c8e357.pth'
 
     # ==== parameters ==== #
@@ -93,19 +95,33 @@ def app(apptype='train'):
         print("Load pretrained weight: {}".format(PRETRAINED))
 
         TP, TF = 0, 0
+        TotalCount = 0
+        TAGTTRUE = False
         for _p in list(paths.list_images(ROOT)):
             print("img: {}".format(_p))
-            pred_labs = engine.evaluate_image(NNmodel, device, img_path=_p, topk=2, height=DIM, width=DIM,
-                                              classes_name=LCLASSES, is_save=True, save_folder='side_clf_eval')
-            img_name = (os.path.basename(_p)).split('.jpg')[0]
-            true_lab = NAME_SPLIT_FUNC(img_name)
-            if true_lab in pred_labs:
-                TP += 1
-            else:
-                TF += 1
+            #pred_labs = engine.evaluate_image(NNmodel, device, img_path=_p, topk=2, height=DIM, width=DIM,
+            #                                  classes_name=LCLASSES, is_save=True, save_folder='side_clf_eval')
 
-        ACCURACY = TP/(TP+TF)
-        print("TP={}, TF={}, Accuracy: {}".format(TP, TF, ACCURACY))
+            pred_labs = engine.evaluate_image(NNmodel, device, img_path=_p, topk=1, height=DIM, width=DIM,
+                                              classes_name=LCLASSES, is_save=True, save_folder='logo_clf_eval', tagTrue=TAGTTRUE)
+
+            if TAGTTRUE:
+                img_name = (os.path.basename(_p)).split('.jpg')[0]
+                true_lab = NAME_SPLIT_FUNC(img_name)
+                if true_lab in pred_labs:
+                    TP += 1
+                else:
+                    TF += 1
+
+            TotalCount += 1
+
+        if TAGTTRUE:
+            ACCURACY = TP/(TP+TF)
+            print("TP={}, TF={}, Accuracy: {}".format(TP, TF, ACCURACY))
+            print("Total count={}".format(TotalCount))
+        else:
+            print("Total count={}".format(TotalCount))
+
         print("evaluation done")
         return
 
