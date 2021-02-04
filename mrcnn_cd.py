@@ -328,8 +328,8 @@ def app_load_image():
 
 
 def app(apptype='train'):
-    datasetRoot = "./data/eval_labeled/20201112" #"./data/eval_labeled/20201112" #"./data/Cathay_Image_Training/20201116"
-    pretrained_path = "./weights/20201211_1/mrcnn_cd_aug_15.pth"
+    datasetRoot = "./data/eval_labeled/20201218_ok3_250" #"./data/eval_labeled/20201112" #"./data/Cathay_Image_Training/20201116"
+    pretrained_path = "./weights/20201211_2/mrcnn_cd_aug_15.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200820_14.pth"
     CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
              "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \

@@ -175,7 +175,8 @@ def img2torch(img, transforms=None, height=224, width=224):
 def position_merge(img_dict, cls_dict):
     print(cls_dict)
     for _k in cls_dict.keys():
-        if _k in ['CBF', 'CBB']:
+        if _k in ['CAF', 'CAB', 'CBF', 'CBB', 'CDFR', 'CDFL', 'CDBR', 'CDBL', \
+                  'CFFR', 'CFFL', 'CFBR', 'CFBL', 'CS', 'CG']:
             updated_pos = []
             pos = cls_dict[_k]
             if len(pos) > 1:

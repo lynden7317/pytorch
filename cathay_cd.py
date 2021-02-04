@@ -28,10 +28,10 @@ from classification import models
 
 from distutils.version import LooseVersion
 
-logging.basicConfig(level=logging.DEBUG)  # logging.DEBUG
+logging.basicConfig(level=logging.DEBUG)  # logging.DEBUG/logging.INFO
 
 IMGDICT = {}
-NP_WHERE_MASK = 0.5
+NP_WHERE_MASK = 0.4 #0.5
 
 def gray_3_ch(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -211,17 +211,17 @@ def smoothing(mask, path):
     epsilon = 0.01
     # masks smoothing
     logging.debug("<mask smoothing> shape: {}".format(mask.shape))
-    print(len(np.where(mask > NP_WHERE_MASK)[0]), len(np.where(mask > 0)[0]))
+    #print(len(np.where(mask > NP_WHERE_MASK)[0]), len(np.where(mask > 0)[0]))
     org_mask = np.zeros((mask.shape[0],mask.shape[1]))
     smooth_mask = np.zeros((mask.shape[0],mask.shape[1]))
     cols, rows = np.where(mask > NP_WHERE_MASK)
-    print("before:{}".format(len(cols)))
+    #print("before:{}".format(len(cols)))
     org_mask[cols, rows] = 255
     org_mask = cv2.blur(org_mask, blur_kernel)
     org_mask = org_mask.astype(np.uint8)
     try:
         cnts, hier = cv2.findContours(org_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        print(len(cnts))
+        #print(len(cnts))
         # filter the max cnt
         max_cnts = None
         max_peri = 0
@@ -237,9 +237,10 @@ def smoothing(mask, path):
         x1, y1 = rows.min()-1, cols.min()-1
         x2, y2 = rows.max()+1, cols.max()+1
         w, h = x2-x1, y2-y1
-        print("after:{}".format(len(cols)))
-        print(len(np.where(smooth_mask>0)[0]))
-        cv2.imwrite(path, smooth_mask)
+        #print("after:{}".format(len(cols)))
+        #print(len(np.where(smooth_mask>0)[0]))
+        if logging.getLogger().level == logging.DEBUG:
+            cv2.imwrite(path, smooth_mask)
         #sys.exit(1)
         return True, (x1,y1,w,h,cols,rows)
     except:
@@ -258,7 +259,7 @@ def seg_merge(results):
     merge_scores = np.zeros(diffs)
     merge_masks = np.zeros((diffs, results["masks"].shape[1],
                             results["masks"].shape[2], results["masks"].shape[3]))
-    print(results["labels"], diffs, results["boxes"].shape, results["scores"].shape, results["masks"].shape)
+    #print(results["labels"], diffs, results["boxes"].shape, results["scores"].shape, results["masks"].shape)
     try:
         for i, v in enumerate(results["labels"]):
             idx = _ll.index(v)
@@ -307,10 +308,10 @@ def car_rules(image, cls_dict):
     pass
     # car checking rules
     #c_post_rules.position_merge(IMGDICT, cls_dict)
-    car_side = c_post_rules.side_check(image)
-    print("car_side: {}".format(car_side))
-    c_post_rules.remove_wrongs(car_side, cls_dict)
-    c_post_rules.correct_wrongs(car_side, cls_dict)
+    #car_side = c_post_rules.side_check(image)
+    #print("car_side: {}".format(car_side))
+    #c_post_rules.remove_wrongs(car_side, cls_dict)
+    #c_post_rules.correct_wrongs(car_side, cls_dict)
     #sys.exit(1)
 
 def mask_decode(image, result, classes, outputfolder,
@@ -329,7 +330,8 @@ def mask_decode(image, result, classes, outputfolder,
     if path_org not in IMGDICT.keys():
         IMGDICT[path_org] = img_bgr
 
-    cv2.imwrite(path_org, img_bgr)
+    if logging.getLogger().level == logging.DEBUG:
+        cv2.imwrite(path_org, img_bgr)
 
     labels = result["labels"]
     boxes = result["boxes"]
@@ -350,7 +352,7 @@ def mask_decode(image, result, classes, outputfolder,
             logging.debug("damage pixels:{}, class:{}".format(pos[0].shape[0], classes[lab]))
             if classes[lab] in ['DN', 'DR', 'CTA', 'CP']:
                 continue
-            if pos[0].shape[0] < 4000:
+            if pos[0].shape[0] < 1000: #4000
                 # the damage region is too small
                 continue
 
@@ -395,7 +397,7 @@ def mask_decode(image, result, classes, outputfolder,
     return cls_dict
 
 def car_model(device):
-    MODEL_PATH = "./weights/20201211_1/mrcnn_cd_aug_15.pth"
+    MODEL_PATH = "./weights/20201218_1/mrcnn_cd_aug_15.pth"
     BACKBONE = 'resnet101'
     CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
              "CFFR", "CFFL", "CFBR", "CFBL", "CS", "CMR", "CML", \
@@ -412,7 +414,7 @@ def car_model(device):
     return mrcnn, CLASS
 
 def damage_model(device):
-    MODEL_PATH = "./weights/D_20201125/mrcnn_cd_aug_3.pth"
+    MODEL_PATH = "./weights/D_20210118_all_DD/mrcnn_cd_aug_15.pth"
     BACKBONE = 'resnet50'
     CLASS = ['DS', 'DD', 'DC', 'DW', 'DH', 'DN', 'DR', 'CTA', 'CP']
 
@@ -473,11 +475,11 @@ def merge_car_damage_segs(cars, damages, outputfolder):
     return cls_dict
 
 @torch.no_grad()
-def car_segmentation(cases, folder):
+def car_segmentation(cases, folder, damage_on):
     DIM = 1024
     PAD = 32
     BATCHSIZE = 16
-    CAR_SCORETHRESHOLD = 0.7
+    CAR_SCORETHRESHOLD = 0.9
     CAR_NMSTHRESHOLD = 0.3
     DAMAGE_SCORETHRESHOLD = 0.7
     DAMAGE_NMSTHRESHOLD = 0.3
@@ -514,14 +516,34 @@ def car_segmentation(cases, folder):
         images = list(img.to(device) for img in images)
         torch.cuda.synchronize()
         c_outputs = c_mrcnn(images)   # car segmentation
-        d_outputs = d_mrcnn(images)   # damage segmentation
         c_outputs = [{k: v.to(device) for k, v in t.items()} for t in c_outputs]
-        d_outputs = [{k: v.to(device) for k, v in t.items()} for t in d_outputs]
+
+        if damage_on:
+            try:
+                d_outputs = d_mrcnn(images)   # damage segmentation
+                d_outputs = [{k: v.to(device) for k, v in t.items()} for t in d_outputs]
+            except:
+                logging.warning("<car_segmentation> damage detection fail")
+                d_outputs = {}
+
         #print(len(c_outputs), len(d_outputs))
+
         car_mask_dict, damage_mask_dict, car_damage_dict = None, None, None
         for _i, c in enumerate(c_outputs):
             logging.debug("car seg. target keys:{}".format(targets[_i].keys()))
-            d = d_outputs[_i]
+
+            if damage_on:
+                try:
+                    d = d_outputs[_i]
+                    #print(d)
+                except:
+                    logging.warning("<car_segmentation> damage detection fail, set to default")
+                    d = {'boxes': [], 'labels': [], 'scores': [], 'masks': []}
+                    damage_mask_dict = {}
+            else:
+                d = {'boxes': [], 'labels': [], 'scores': [], 'masks': []}
+                damage_mask_dict = {}
+
             img_idx = targets[_i]['idx'].cpu().clone().numpy()
             img_path = imgset.imgs[img_idx]
 
@@ -530,13 +552,14 @@ def car_segmentation(cases, folder):
                 d_results = seg_merge(d_results)
                 d_results.update({"path": img_path})
                 damage_mask_dict = mask_decode(images[_i], d_results, damage_class_names, TMPFOLDER, tag='d')
+                #print(damage_mask_dict)
 
             if len(c['labels']) > 0:
                 c_results = seg_criterion(c, {'score':CAR_SCORETHRESHOLD, 'nms':CAR_NMSTHRESHOLD})
                 c_results.update({"path": img_path})
                 car_mask_dict = mask_decode(images[_i], c_results, car_class_names, TMPFOLDER,
                                             tag='c', is_smooth=True)
-                #major_car(car_mask_dict)
+
                 car_rules(images[_i], car_mask_dict)
 
             if car_mask_dict is not None and damage_mask_dict is not None:
@@ -574,7 +597,7 @@ def case_division(seg_dict):
 def plate_detection(case_list, folder):
     DIM = 1024
     PAD = 32
-    URL = "http://211.21.191.139:8080/lpr_one"
+    URL = "http://211.21.191.139:17177/alpr" #"http://211.21.191.139:8080/lpr_one"
 
     TMPFOLDER = cathay_utils.path_join(cathay_utils.nt_path(folder), 'tmp')
     plate_return_dict = {"plates":[]}
@@ -612,18 +635,38 @@ def plate_detection(case_list, folder):
         time.sleep(1)
 
         files = {'file': open(_path, 'rb')}
+
         try:
             response = requests.post(url=URL, files=files, timeout=2)
+            plate_num = response.text
         except requests.exceptions.ReadTimeout:
             logging.error('Request timed out')
+            plate_num = None
+        except:
+            logging.error('Request timed out')
+            plate_num = None
 
-        #print(response, response.text)
-        json_format = json.loads(response.text)
-        #print(json_format)
-        if json_format is None:
-            logging.warning("No plate is detected")
+        if plate_num is None:
+            logging.warning("<plate_num=None> No plate is detected")
             continue
         else:
+            json_format = json.loads(plate_num)
+            if json_format is None:
+                logging.warning("<json=None> No plate is detected")
+                continue
+
+            #print(json_format)
+            for t in json_format['file']:
+                plate["image_path"] = _path
+                try:
+                    plate["plate"] = t['plate.number']
+                    x, y, w, h = int(t['object.region'][0]), int(t['object.region'][1]), int(t['object.region'][2]), int(t['object.region'][3])
+                    plate["confidence"] = t['object.confidence']
+                    plate["location"] = [x, y, w, h]
+                    plate_return_dict["plates"].append(plate)
+                except:
+                    logging.warning("No formatted plate!")
+            """
             for t in json_format['tag']:
                 plate["image_path"] = _path
                 plate["plate"] = t['plateNumber']
@@ -631,6 +674,7 @@ def plate_detection(case_list, folder):
                 plate["confidence"] = t['plateConfidence']
                 plate["location"] = [x, y, w, h]
                 plate_return_dict["plates"].append(plate)
+            """
 
         #sys.exit(1)
 
@@ -642,7 +686,8 @@ def color_detection(case_list):
     # (path_org, path, (x1,y1), (w,h), (cols, rows))
     # received color seq: BGR
     #logging.debug("colors: {}".format(case_list))
-    grid_size = 10
+    grid_pixel = 60 #100 #120 #30
+
     colors = {}
     for c in case_list:
         #logging.debug("path:{}, (w,h):{}, mask_img:{}, pos_img:{}".format(c[1], c[3], c[4].shape, c[5].shape))
@@ -652,42 +697,71 @@ def color_detection(case_list):
         x1, y1 = c[2]
         w, h = c[3]
         cols_org, rows_org = c[4]
-        x = np.linspace(0, w, grid_size+1, dtype=np.int32)
-        y = np.linspace(0, h, grid_size+1, dtype=np.int32)
+
+        # generate grid with grid_pixel pixels
+        x_grids = list(np.arange(int(w/grid_pixel)+1)*grid_pixel)
+        x_grids.append(w)
+        y_grids = list(np.arange(int(h/grid_pixel)+1)*grid_pixel)
+        y_grids.append(h)
+
         cols = cols_org - y1
         rows = rows_org - x1
-        logging.debug("{},{},{},{},{}".format(path,(x1,y1),(w,h),cols.shape, rows.shape))
+        logging.debug("<color>: {},{},{},{},{}".format(path,(x1,y1),(w,h),cols.shape, rows.shape))
 
         mask_img = np.zeros((h,w,3))
         pos_mask = np.zeros((h,w))
         mask_img[cols,rows,:] = img_org[cols_org,rows_org,:]
         pos_mask[cols,rows] = 1
-        for gx in range(grid_size):
-            _x1, _x2 = x[gx], x[gx + 1]
-            for gy in range(grid_size):
-                _y1, _y2 = y[gy], y[gy+1]
+        #print(x_grids, y_grids)
+        for gx in range(len(x_grids)-1):
+            _x1, _x2 = x_grids[gx], x_grids[gx + 1]
+            for gy in range(len(y_grids)-1):
+                _y1, _y2 = y_grids[gy], y_grids[gy+1]
                 avg = np.sum(pos_mask[_y1:_y2, _x1:_x2], dtype=np.int32)
                 color_bgr = np.sum(np.sum(mask_img[_y1:_y2, _x1:_x2, :], axis=0), axis=0)
                 if avg > 0:
                     avg = float(1.0/float(avg))
                     color_bgr_avg = np.array(color_bgr*avg, dtype=np.int32)
+                    hsv = cathay_utils.bgr2hsv(color_bgr_avg)
                     #print(c, avg, color_bgr_avg)
                     # input to rgb
-                    cname = cathay_utils.closest_colour((color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]))
+                    cname = cathay_utils.closest_colour((color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), hsv)
+                    weight = cathay_utils.color_weight((x1+_x1,y1+_y1,x1+_x2,y1+_y2))
+                    #weight = 1
+                    #print((color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), hsv, cname, weight)
                     if cname in colors.keys():
-                        colors[cname] += 1
+                        colors[cname] += (1*weight)
                     else:
-                        colors[cname] = 1
+                        colors[cname] = (1*weight)
 
-                    #print(c, avg, (color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), cname)
+                    logging.debug("<color>: item:{}, avg:{}, rgb:{}, hsv:{}, name:{}".format((c[0],c[1],c[2],c[3]), avg, \
+                                                                 (color_bgr_avg[2],color_bgr_avg[1],color_bgr_avg[0]), hsv, cname))
 
-    #print(colors)
+    logging.debug("colors: {}".format(colors))
     #sys.exit(1)
     max_color = sorted(colors, key=lambda k: colors[k])
     #if len(max_color) > 2:
     #    colorName = max_color[-1] + "_" + max_color[-2]
-    if len(max_color) > 1:
+    if len(max_color) > 0:
         colorName = max_color[-1]
+        """
+        if colorName in ['silver', 'gray']:
+            total = 0
+            top2 = [0, '']
+            for c in colors.keys():
+                total += colors[c]
+                if colorName == c:
+                    continue
+                else:
+                    if colors[c] > top2[0]:
+                        top2 = [colors[c], c]
+
+            t1v = '%.1f' % (colors[colorName]/total)
+            t2v = '%.1f' % (top2[0]/total)
+            t1 = colorName+"("+t1v+")"
+            t2 = top2[1]+"("+t2v+")"
+            colorName=t1+','+t2
+        """
     else:
         colorName = "None"
 
@@ -698,7 +772,7 @@ def color_detection(case_list):
 @torch.no_grad()
 def logo_detection(case_list):
     logging.debug("logos: {}".format(case_list))
-    MODEL_PATH = "./weights/car_logo/20201215/best_resnet50.pth" #"./weights/resnet50_10.pth"
+    MODEL_PATH = "./weights/car_logo/20210111/best_resnet50.pth" #"./weights/resnet50_10.pth"
     MODEL = 'resnet50'
     CLASSES = ['Alfa Romeo', 'Audi', 'BMW', 'Chevrolet', 'Citroen', 'Dacia', 'Daewoo', 'Dodge', 'Ferrari', 'Fiat', \
                'Ford', 'Honda', 'Hyundai', 'Jaguar', 'Jeep', 'Kia', 'Lada', 'Lancia', 'Land Rover', 'Lexus', \
@@ -721,7 +795,7 @@ def logo_detection(case_list):
         img_bgr = IMGDICT[i[0]]
         x1, y1 = i[2]
         w, h = i[3]
-        if w*h < 1600:
+        if w*h < 1200 and len(case_list) > 1:
             logging.debug("<logo detection> case too small:{}".format(len(cases)))
             continue
 
@@ -736,6 +810,9 @@ def logo_detection(case_list):
         logo_img_rgb[:,:,2] = logo_img_bgr[:,:,0]
         logging.debug("logo image shape:{}".format(logo_img_rgb.shape))
         cases.append(logo_img_rgb)
+
+    if len(cases) == 0:
+        return "None"
 
     logging.debug("<logo detection> #cases:{}".format(len(cases)))
     transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -762,8 +839,33 @@ def logo_detection(case_list):
         outputs = resnet(images)
         _, preds = torch.max(outputs, 1)
         preds = preds.cpu().clone().numpy().tolist()
-        results.append(max(set(preds), key=lambda x:preds.count(x)))
+        results = results + preds
+        #results.append(max(set(preds), key=lambda x:preds.count(x))) #選擇發生次數最多的
         #print(preds, type(preds))
+
+    # results: id start from 0
+    logging.debug("<logo> before results:{}".format(results))
+    if len(results) > 1:
+        updated_results = [-1, 0.0]
+        max_area = 0
+        for i, v in enumerate(results):
+            area = (case_list[i][3][0]*case_list[i][3][1])
+            if area > max_area:
+                max_area = area
+
+        for i, v in enumerate(results):
+            cta_prob = case_list[i][6]
+            area = (case_list[i][3][0]*case_list[i][3][1])/max_area
+            area = 0
+            prob = cta_prob + area
+            if prob > updated_results[1]:
+                updated_results = [v, prob]
+        #print(max_area, updated_results)
+
+        results = [updated_results[0]]
+
+    logging.debug("<logo> after results:{}".format(results))
+    #sys.exit(1)
 
     if len(results) > 0:
         max_pred_logo = CLASSES[max(set(results), key=lambda x:results.count(x))]
@@ -774,14 +876,14 @@ def logo_detection(case_list):
     return max_pred_logo
 
 def plate_match(plate_dict, plate_cases):
-    print(plate_dict)
-    print(plate_cases)
+    #print(plate_dict)
+    #print(plate_cases)
     if len(plate_dict['plates']) == 0:
         logging.info("No any plate is located")
-        return "None"
+        return [0, 0, "Null"]
     if len(plate_cases) == 0:
         logging.info("No any plate is detected")
-        return "None"
+        return [0, 0, "Null"]
 
     major_plate = [0, 0, "None"]   #[iou, case_id, plate_number]
     major_plate_pair = [0, -1000]
@@ -803,6 +905,7 @@ def plate_match(plate_dict, plate_cases):
 
     #print(img, x1, y1, x2, y2)
     # format: ("img_path", "img_seg_path", (x,y), (w,h), np(cols,rows))
+    #print(plate_cases)
     for i, _c in enumerate(plate_cases):
         _img = _c[0]
         if img != _img:
@@ -816,8 +919,8 @@ def plate_match(plate_dict, plate_cases):
         interArea = max(0, xB-xA+1)*max(0, yB-yA+1)
         boxArea = (_x2-_x1+1)*(_y2-_y1+1)
         iou = interArea / float(boxArea+tarArea-interArea)
-        #print(iou)
-        if iou > 0.7:
+        print(iou)
+        if iou > 0.5:  # 0.6
             if iou > major_plate[0]:
                 major_plate[0] = iou
                 major_plate[1] = i
@@ -838,16 +941,25 @@ def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False
                 approx = cv2.approxPolyDP(c, 0.01 * peri, True)
                 for p in range(approx.shape[0]):
                     _cnt.append([int(approx[p][0][0]), int(approx[p][0][1])])
+
+                if len(_cnt) < 3:  # point less than 3 --> ignore
+                    continue
+
                 points.append(_cnt)
         elif len(cnts) == 1:
+            #print("**** cnts=1 ****")
             points = []
             peri = cv2.arcLength(cnts[0], True)
             approx = cv2.approxPolyDP(cnts[0], 0.01 * peri, True)
             for p in range(approx.shape[0]):
                 points.append([int(approx[p][0][0]), int(approx[p][0][1])])
+
+            if len(points) < 3: # point less than 3 --> ignore
+                points = []
         else:
             points = []
 
+        # format: points = [[x1,y1],[x2,y2], ...]
         return points
 
     name = save_name
@@ -874,12 +986,12 @@ def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False
                 d_pos[d_cols, d_rows] = 255
                 d_pos = d_pos.astype(np.uint8)
                 dpoints = mask2poly(d_pos)
+                #print("extract dpoints: {}".format(dpoints))
                 part["damages"].append({"label":d, "points":dpoints})
 
             c_pos = c_pos.astype(np.uint8)
             points = mask2poly(c_pos)
             part["points"] = points
-
             data["cars"].append(part)
 
     json_data = json.dumps(data, indent=4, separators=(',', ': '))
@@ -889,50 +1001,91 @@ def summary(save_name, seg_dict, logo, color, plate, outputfolder, is_plot=False
     if is_plot:
         alpha = 0.5
         img_dict = {}
+        damage_list = []
         for c in data["cars"]:
             img_path = c["image_path"]
             img = cv2.imread(img_path)
             if img_path not in img_dict.keys():
-                img_dict[img_path] = [img, []]
+                img_dict[img_path] = [img, [], []] # [img_source, [masks], [[(x,y), label], ...]]
+
         for c in data["cars"]:
+            label = c['label']
             img_path = c["image_path"]
             mask = np.zeros((img_dict[img_path][0].shape[0], img_dict[img_path][0].shape[1]))
             points = np.array(c["points"])
             points = np.reshape(points, (points.shape[0], 1, points.shape[1]))
 
-            # cv2.drawContours(mask, [cnt.astype(int)], -1, (255), -1)  # fill the contour
-            cv2.drawContours(mask, [points.astype(int)], -1, (255), 5)
+            if label in ['CP', 'CTA']:
+                pass
+            else:
+                _points = np.array(c["points"])
+                centerVx = np.mean(_points, axis=0)
+                cv2.drawContours(mask, [points.astype(int)], -1, (255), 5)
+                #cv2.drawContours(mask, [points.astype(int)], -1, (255), -1)  # fill the contour
 
-            damages = c["damages"]
-            for d in damages:
-                #print(len(np.asarray(d["points"]).shape))
-                if len(np.asarray(d["points"]).shape) == 1:
-                    # contain multiple contours
-                    for cnt in d["points"]:
+                damages = c["damages"]
+                #print("damages: {}".format(damages))
+                for d in damages:
+                    mask_d = np.zeros((img_dict[img_path][0].shape[0], img_dict[img_path][0].shape[1]))
+                    d_label = d["label"]
+                    #print(d["points"], d_label, np.asarray(d["points"]).shape)
+                    if len(np.asarray(d["points"]).shape) == 2:
+                        ddpoints = [copy.deepcopy(d["points"])]
+                    else:
+                        ddpoints = copy.deepcopy(d["points"])
+
+                    for cnt in ddpoints:
                         dpoints = np.array(cnt)
+                        d_centervx = np.mean(dpoints, axis=0)
+                        #print(dpoints, d_centervx)
                         dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
-                        cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), -1)
-                elif len(np.asarray(d["points"]).shape) == 2:
-                    dpoints = np.array(d["points"])
-                    dpoints = np.reshape(dpoints, (dpoints.shape[0], 1, dpoints.shape[1]))
-                    cv2.drawContours(mask, [dpoints.astype(int)], -1, (255), -1)
-                else:
-                    pass
+                        cv2.drawContours(mask_d, [dpoints.astype(int)], -1, (255), -1)
+                        damage_list.append([mask_d, [(int(d_centervx[0]), int(d_centervx[1])), d_label]])
 
-            img_dict[img_path][1].append(mask)
+                img_dict[img_path][2].append([(int(centerVx[0]), int(centerVx[1])), label])
+                img_dict[img_path][1].append(mask)
 
+        #print("img_dict: {}".format(img_dict))
         for k in img_dict.keys():
             basename = os.path.basename(k)
             img = img_dict[k][0]
             N = len(img_dict[k][1])
-            colors = cathay_utils.random_colors(N)
+            #colors = cathay_utils.random_colors(N)
             for i in range(N):
-                color = colors[i]
+                #color = colors[i]
+                label = img_dict[k][2][i][1]
+                vx = img_dict[k][2][i][0]
+                color = cathay_utils.car_color_map(label)
                 mask = img_dict[k][1][i]
                 for c in range(3):
                     img[:, :, c] = np.where(mask >= 0.5,
-                                            img[:, :, c] *(1 - alpha) + alpha * color[c] * 255,
+                                            img[:, :, c] *(1 - alpha) + alpha*color[c]*255,
                                             img[:, :, c])
+
+                if len(label) == 2:
+                    cv2.rectangle(img, (vx[0], vx[1] - 23), (vx[0] + 40, vx[1]), (0, 0, 0), -1)
+                if len(label) == 3:
+                    cv2.rectangle(img, (vx[0], vx[1] - 23), (vx[0] + 60, vx[1]), (0, 0, 0), -1)
+                if len(label) == 4:
+                    cv2.rectangle(img, (vx[0], vx[1] - 23), (vx[0] + 80, vx[1]), (0, 0, 0), -1)
+
+                cv2.putText(img, label, vx, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 255), 1, cv2.LINE_AA)
+
+            # for damage
+            for i in damage_list:
+                label = i[1][1]
+                vx = i[1][0]
+                mask = i[0]
+                color = cathay_utils.damage_color_map(label)
+                for c in range(3):
+                    img[:, :, c] = np.where(mask >= 0.5,
+                                            img[:, :, c] *(1 - 0.3) + 0.3*color[c]*255,
+                                            img[:, :, c])
+                if len(label) == 2:
+                    cv2.rectangle(img, (vx[0], vx[1] - 23), (vx[0] + 40, vx[1]), (0, 0, 0), -1)
+
+                cv2.putText(img, label, vx, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 255), 1, cv2.LINE_AA)
+
             newname = "predict_"+basename
             outpath = os.path.join(data["folder"], newname)
             cv2.imwrite(outpath, img)
@@ -949,12 +1102,12 @@ def phase1_1_flow(args, case_files):
 
     # car and damage detection & segmentation
     start_time = time.time()
-    seg_dict = car_segmentation(case_files, args.case_path)
+    seg_dict = car_segmentation(case_files, args.case_path, args.damage_on)
     seg_time_str = str(datetime.timedelta(seconds=int(time.time() - start_time)))
     logging.info("Car Segmentation Time: {}".format(seg_time_str))
     logging.info("IMG Dataset:")
-    for i in IMGDICT.keys():
-        logging.info("key:{}, shape:{}".format(i, IMGDICT[i].shape))
+    for i, v in enumerate(IMGDICT.keys()):
+        logging.info("<{}> img:{}, shape:{}".format(i, v, IMGDICT[v].shape))
 
     case_dict = case_division(seg_dict)
     #print("case_dict: {}".format(case_dict))
@@ -998,6 +1151,7 @@ if __name__ == '__main__':
             folder = cathay_utils.nt_path(rs)
         else:
             folder = rs
+        #print(folder)
         if "tmp" in folder:
             continue
         for f in fs:
@@ -1012,9 +1166,9 @@ if __name__ == '__main__':
 
     if args.case_mode == 'single':
         for c in case_files:
-            print("single case: {}".format(c))
+            logging.info("single case: {}".format(c))
             phase1_1_flow(args, [c])
-            sys.exit(1)
+            #sys.exit(1)
     else:
         phase1_1_flow(args, case_files)
 

@@ -178,91 +178,10 @@ def extractBBox(dataset, dataloader, class_name):
                 fid.write(_str)
 
 
-def app_color():
-    datasetRoot = "./data/car_loc/"  # "./data/damage_20200826/" #"./data/damage_0827/"
-    pretrained_path = "./weights/mrcnn_cd_20200908_101_aug_14.pth"  # "./weights/mrcnn_cd_20200820_14.pth"
-    CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", "CFFR", "CFFL", "CFBR", "CFBL", "CC", "CP", "CL"]
-    # CLASS = ['DS', 'DD', 'DC', 'DW', 'DH'] #['D']
-    BATCHSIZE = 4
-    DIM = 1024
-    PAD = 32
-    EPOCHS = 150
-
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    torch.multiprocessing.freeze_support()
-
-    transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-    dataset = mrcnnDataGen.MRCnnDataset(datasetRoot,
-                                        resize_img=[True, DIM, DIM],
-                                        padding=[True, PAD],
-                                        augmentation=None,
-                                        pil_process=True,
-                                        npy_process=False,
-                                        transforms=transforms,
-                                        page_classes=CLASS,
-                                        field_classes=[],
-                                        data_type='page')
-
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCHSIZE, shuffle=False, collate_fn=obj_utils.collate_fn)
-
-    is_pil = True
-    outputfolder = "./colors/"
-    for inputs, targets in dataloader:
-        for _id in range(len(inputs)):
-            img_id = targets[_id]['image_id'].byte().numpy()[0]
-            img_path = dataset.imgs[img_id]
-            img_name = os.path.basename(img_path).split(".jpg")[0]
-            print(img_path)
-            if is_pil:
-                img = torchvision.transforms.ToPILImage()(inputs[_id])
-                img = np.array(img)
-
-            print(img.shape)
-            mask = targets[_id]['masks'].byte()
-            mask = mask.numpy().transpose((1, 2, 0))
-            for _m in range(mask.shape[2]):
-                pos = np.where(mask[:, :, _m] > 0.5)
-                print(pos[0].shape, pos[1].shape)
-
-                mask_img = np.zeros(img.shape)
-                cv_img = np.zeros(img.shape)
-
-                sample = random.sample(range(pos[0].shape[0]), 300)
-                colors = {}
-                for p in sample:
-                    c = (img[pos[0][p], pos[1][p], 0], img[pos[0][p], pos[1][p], 1], img[pos[0][p], pos[1][p], 2])
-                    cname = cathay_utils.closest_colour(c)
-                    if cname in colors.keys():
-                        colors[cname] += 1
-                    else:
-                        colors[cname] = 1
-
-                max_color = sorted(colors, key=lambda k: colors[k])
-                colorName = max_color[-1]+"_"+max_color[-2]
-                print(colorName)
-
-                for c in range(3):
-                    mask_img[:, :, c] = np.where(mask[:,:,_m] > 0.5, img[:, :, c], 0)
-                #cRGB = (np.sum(np.sum(mask_img, axis=0), axis=0)/pos[0].shape).astype(int)
-                #colorName = cathay_utils.closest_colour(cRGB)
-
-                cv_img[:,:,0] = mask_img[:,:,2]
-                cv_img[:,:,1] = mask_img[:,:,1]
-                cv_img[:,:,2] = mask_img[:,:,0]
-                cv2.putText(cv_img, colorName, (10,50), cv2.FONT_HERSHEY_DUPLEX,
-                            1, (0, 255, 255), 1, cv2.LINE_AA)
-                #print(cRGB, colorName)
-                #print(np.sum(np.sum(mask_img, axis=0), axis=0)/pos[0].shape)
-                saveName = outputfolder + img_name + "_" + str(_m) + ".jpg"
-                cv2.imwrite(saveName, cv_img)
-
-
-
-
 def app_load_image():
     null = None
-    datasetRoot = "./data/eval_damages/20201117/"
-    pretrained_path = "./weights/D_20201113/mrcnn_cd_aug_8.pth"
+    datasetRoot = "./data/eval_damages_labeled/seg_test"
+    pretrained_path = "./weights/D_20201216/mrcnn_cd_aug_15.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200821_aug_10.pth" #"./weights/mrcnn_cd_20200820_14.pth"
 
     #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
@@ -282,9 +201,10 @@ def app_load_image():
 
     mrcnn.load_state_dict(torch.load(pretrained_path))
     mrcnn.to(device)
-    print(mrcnn)
+    print(mrcnn, datasetRoot)
 
     for _root, dirs, files in os.walk(datasetRoot):
+        #print(_root, dirs, files)
         if os.name == 'nt':
             folder = mrcnnDataGen.ntPath(_root)
         else:
@@ -302,7 +222,7 @@ def app_load_image():
             try:
                 pre_result = engine.evaluate_image(mrcnn, fpath, device, CLASS, [True,DIM,DIM], [False,PAD],
                                                    score_threshold=0.7,
-                                                   is_plot=True, plot_folder='./plotTest_D_20201117')
+                                                   is_plot=True, plot_folder='./plotTest_D')
 
                 print(pre_result.keys(), pre_result['labels'], pre_result['scores'], pre_result['class_names'], len(pre_result['masks']))
                 print("masks shape:{}".format(pre_result['masks'].shape))
@@ -376,8 +296,8 @@ def app_load_image():
 
 
 def app(apptype='train'):
-    datasetRoot = "./data/eval_damages_labeled/20201202_d_testing" #"./data/Cathay_Damage_Training/20201117"
-    pretrained_path = "./weights/D_20201125_cars_all_damages/mrcnn_cd_aug_4.pth"
+    datasetRoot = "./data/eval_damages_labeled/seg_test" #"./data/Cathay_Damage_Training/20201117"
+    pretrained_path = "./weights/D_20201216/mrcnn_cd_aug_15.pth"
     #"./weights/mrcnn_cd_20200908_101_aug_14.pth" #"./weights/mrcnn_cd_20200820_14.pth"
 
     #CLASS = ["CAF", "CAB", "CBF", "CBB", "CDFR", "CDFL", "CDBR", "CDBL", \
@@ -456,6 +376,6 @@ def app(apptype='train'):
 if __name__ == '__main__':
     args = cathay_utils.parse_commands()
 
-    app(apptype=args.mode)
-    #app_load_image()
+    #app(apptype=args.mode)
+    app_load_image()
     #app_color()
